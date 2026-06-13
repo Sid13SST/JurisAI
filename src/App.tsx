@@ -2,6 +2,14 @@ import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 
+// Providers
+import { AuthProvider } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
+
+// Guards
+import { ProtectedRoute } from './components/routes/ProtectedRoute';
+import { PublicRoute } from './components/routes/PublicRoute';
+
 // Layout components
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar } from './components/layout/Sidebar';
@@ -15,19 +23,28 @@ import { ContractDetails } from './pages/ContractDetails';
 import { Comparison } from './pages/Comparison';
 import { Analytics } from './pages/Analytics';
 import { Settings } from './pages/Settings';
+import { Login } from './pages/Login';
+import { Register } from './pages/Register';
+import { ForgotPassword } from './pages/ForgotPassword';
 
-// Layout Wrapper to conditionally show sidebar/navbar
+// Layout Wrapper to conditionally show sidebar/navbar/footer
 const AppContent = () => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  const authPaths = ['/login', '/register', '/forgot-password'];
+  const isAuthPage = authPaths.includes(location.pathname);
   const isLandingPage = location.pathname === '/';
 
-  if (isLandingPage) {
+  if (isLandingPage || isAuthPage) {
     return (
       <div className="w-full min-h-screen flex flex-col bg-[#0A0A0F]">
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+            <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+            <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
           </Routes>
         </AnimatePresence>
       </div>
@@ -48,13 +65,13 @@ const AppContent = () => {
         <div className="flex-1 overflow-y-auto">
           <AnimatePresence mode="wait">
             <Routes location={location} key={location.pathname}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/contracts" element={<Contracts />} />
-              <Route path="/contracts/:id" element={<ContractDetails />} />
-              <Route path="/comparison" element={<Comparison />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Dashboard />} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/contracts" element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
+              <Route path="/contracts/:id" element={<ProtectedRoute><ContractDetails /></ProtectedRoute>} />
+              <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
+              <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             </Routes>
           </AnimatePresence>
           <Footer />
@@ -69,7 +86,11 @@ const AppContent = () => {
 function App() {
   return (
     <Router>
-      <AppContent />
+      <ToastProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </ToastProvider>
     </Router>
   );
 }

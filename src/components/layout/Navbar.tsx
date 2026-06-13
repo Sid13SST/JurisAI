@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Bell, Search, User, ChevronDown, LogOut, Settings, ShieldAlert, Sparkles, HelpCircle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Logo } from '../ui/Logo';
+import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 
 interface NavbarProps {
   onToggleSidebar?: () => void;
@@ -10,7 +12,33 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const { currentUser, logout } = useAuth();
+  const { showToast } = useToast();
   const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      showToast('Logged out successfully.', 'success');
+      navigate('/login');
+    } catch (err: any) {
+      showToast('Failed to log out.', 'error');
+    }
+  };
+
+  const getInitials = () => {
+    if (currentUser?.displayName) {
+      const parts = currentUser.displayName.trim().split(/\s+/);
+      if (parts.length > 1) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      }
+      return parts[0].substring(0, 2).toUpperCase();
+    }
+    if (currentUser?.email) {
+      return currentUser.email.substring(0, 2).toUpperCase();
+    }
+    return 'US';
+  };
 
   const notifications = [
     {
@@ -151,14 +179,22 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
                 setShowProfileMenu(!showProfileMenu);
                 setShowNotifications(false);
               }}
-              className="flex items-center gap-2 rounded-full p-1 hover:bg-white/5 transition-colors"
+              className="flex items-center gap-2 rounded-full p-1 hover:bg-white/5 transition-colors text-left"
             >
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-primary to-secondary text-white font-semibold text-sm">
-                SP
-              </div>
+              {currentUser?.photoURL ? (
+                <img 
+                  src={currentUser.photoURL} 
+                  alt="Profile" 
+                  className="h-8 w-8 rounded-full object-cover border border-white/10"
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-primary to-secondary text-white font-semibold text-sm">
+                  {getInitials()}
+                </div>
+              )}
               <div className="hidden text-left sm:block">
-                <p className="text-xs font-semibold text-slate-200">Siddhant Prasad</p>
-                <p className="text-3xs text-slate-400">Legal Counsel</p>
+                <p className="text-xs font-semibold text-slate-200 truncate max-w-[120px]">{currentUser?.displayName || 'User'}</p>
+                <p className="text-3xs text-slate-400 truncate max-w-[120px]">{currentUser?.email || 'Anonymous'}</p>
               </div>
               <ChevronDown size={14} className="text-slate-400" />
             </button>
@@ -172,21 +208,21 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
                 <div className="py-1">
                   <button 
                     onClick={() => { setShowProfileMenu(false); navigate('/settings'); }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
                   >
                     <User size={14} />
                     <span>My Profile</span>
                   </button>
                   <button 
                     onClick={() => { setShowProfileMenu(false); navigate('/settings'); }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
                   >
                     <Settings size={14} />
                     <span>Account Settings</span>
                   </button>
                   <button 
                     onClick={() => { setShowProfileMenu(false); navigate('/settings'); }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors cursor-pointer"
                   >
                     <HelpCircle size={14} />
                     <span>Support Desk</span>
@@ -194,8 +230,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
                 </div>
                 <div className="border-t border-white/5 p-1">
                   <button 
-                    onClick={() => { setShowProfileMenu(false); navigate('/'); }}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+                    onClick={handleLogout}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors cursor-pointer"
                   >
                     <LogOut size={14} />
                     <span>Log Out</span>
