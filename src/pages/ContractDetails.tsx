@@ -15,14 +15,64 @@ import {
   X,
   AlertTriangle,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Play,
+  AlertCircle,
+  CheckCircle2,
+  Search,
+  ArrowUpRight,
+  ShieldAlert,
+  Copy
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { PageContainer } from '../components/layout/PageContainer';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { doc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, deleteDoc, collection, query, where } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { Contract } from '../types/contractTypes';
+
+interface ClauseDoc {
+  clauseId: string;
+  contractId: string;
+  userId: string;
+  clauseType: string;
+  sectionNumber: string;
+  sectionTitle: string;
+  confidence: number;
+  summary: string;
+  keywords: string[];
+  fullText: string;
+  createdAt: string;
+}
+
+interface AnalysisChunkItem {
+  id: string;
+  chunkIndex: number;
+  text: string;
+  info: string;
+  status: 'pending' | 'analyzing' | 'completed' | 'failed';
+  error: string | null;
+  clauses: any[];
+}
+
+const REQUIRED_CLAUSE_TYPES = [
+  'Indemnity',
+  'Limitation of Liability',
+  'Governing Law',
+  'Termination',
+  'Confidentiality',
+  'Intellectual Property',
+  'Payment Terms',
+  'Force Majeure',
+  'Dispute Resolution',
+  'Data Protection',
+  'Non-Compete',
+  'Assignment',
+  'Warranty',
+  'Audit Rights',
+  'Insurance'
+];
 
 export const ContractDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +85,9 @@ export const ContractDetails: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
+  // Tab: 'viewer' | 'ai'
+  const [activeTab, setActiveTab] = useState<'viewer' | 'ai'>('viewer');
+
   // Outline/TOC filtering
   const [outlineSearch, setOutlineSearch] = useState('');
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -46,6 +99,24 @@ export const ContractDetails: React.FC = () => {
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editedCategory, setEditedCategory] = useState('');
 
+  // AI Queue Orchestration States
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisChunks, setAnalysisChunks] = useState<AnalysisChunkItem[]>([]);
+
+  // Clauses list synced from Firestore
+  const [clauses, setClauses] = useState<ClauseDoc[]>([]);
+
+  // Clause Workspace Search/Filter States
+  const [clauseSearch, setClauseSearch] = useState('');
+  const [filterClauseType, setFilterClauseType] = useState('all');
+  const [filterConfidence, setFilterConfidence] = useState<'all' | 'high' | 'medium' | 'low'>('all');
+  const [showMissingToggle, setShowMissingToggle] = useState(false);
+  const [expandedClauses, setExpandedClauses] = useState<Record<string, boolean>>({});
+
+  // Reader ref for scrolling
+  const readerContainerRef = useRef<HTMLDivElement>(null);
+
   const toggleSection = (secId: string) => {
     setCollapsedSections(prev => ({ ...prev, [secId]: !prev[secId] }));
   };
@@ -54,13 +125,14 @@ export const ContractDetails: React.FC = () => {
     setCollapsedReaderSections(prev => ({ ...prev, [secId]: !prev[secId] }));
   };
 
-  // Reader ref for scrolling
-  const readerContainerRef = useRef<HTMLDivElement>(null);
+  const toggleClauseExpand = (clauseId: string) => {
+    setExpandedClauses(prev => ({ ...prev, [clauseId]: !prev[clauseId] }));
+  };
 
+  // Sync Contract Record
   useEffect(() => {
     if (!id || !currentUser) return;
 
-    // Real-time listener for the specific contract doc
     const docRef = doc(db, 'contracts', id);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -81,6 +153,36 @@ export const ContractDetails: React.FC = () => {
 
     return unsubscribe;
   }, [id, currentUser, navigate, showToast]);
+
+  // Sync Clauses list
+  useEffect(() => {
+    if (!id || !currentUser) return;
+
+    const q = query(
+      collection(db, 'clauses'),
+      where('contractId', '==', id)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const clausesList: ClauseDoc[] = [];
+      snapshot.forEach((doc) => {
+        clausesList.push(doc.data() as ClauseDoc);
+      });
+
+      // Sort clauses by section number or type
+      clausesList.sort((a, b) => {
+        const aSec = a.sectionNumber || '';
+        const bSec = b.sectionNumber || '';
+        return aSec.localeCompare(bSec, undefined, { numeric: true, sensitivity: 'base' }) || a.clauseType.localeCompare(b.clauseType);
+      });
+
+      setClauses(clausesList);
+    }, (err) => {
+      console.error('Error fetching clauses:', err);
+    });
+
+    return unsubscribe;
+  }, [id, currentUser]);
 
   const handleRename = async () => {
     if (!id || !editedName.trim()) return;
@@ -154,11 +256,207 @@ export const ContractDetails: React.FC = () => {
     }
   };
 
+  // Client-Orchestrated AI Queue & Retry Mechanics
+  const startOrResumeAnalysis = async (startFresh = false) => {
+    if (!contract || !currentUser) return;
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+    setActiveTab('ai');
+
+    try {
+      const idToken = await currentUser.getIdToken();
+      let currentChunks = [...analysisChunks];
+
+      // 1. Get or generate chunks
+      if (startFresh || currentChunks.length === 0) {
+        const chunkRes = await fetch('http://localhost:5001/api/ai/chunk', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ structuredText: contract.structuredText || [] })
+        });
+        if (!chunkRes.ok) throw new Error('Failed to partition document text.');
+        const { chunks } = await chunkRes.json();
+
+        currentChunks = chunks.map((chunk: any) => ({
+          id: chunk.id,
+          chunkIndex: chunk.chunkIndex,
+          text: chunk.text,
+          info: chunk.info,
+          status: 'pending' as const,
+          error: null as string | null,
+          clauses: [] as any[]
+        }));
+        setAnalysisChunks(currentChunks);
+      } else {
+        // Reset failed chunks to pending for resumes
+        currentChunks = currentChunks.map(c => 
+          c.status === 'failed' ? { ...c, status: 'pending' as const, error: null } : c
+        );
+        setAnalysisChunks(currentChunks);
+      }
+
+      // Update firestore contract status to analyzing
+      const docRef = doc(db, 'contracts', contract.contractId);
+      await updateDoc(docRef, { analysisStatus: 'analyzing' });
+
+      // Worker function to analyze a single chunk
+      const analyzeSingleChunk = async (chunkId: string) => {
+        setAnalysisChunks(prev => prev.map(c => c.id === chunkId ? { ...c, status: 'analyzing' as const, error: null } : c));
+        
+        const chunkItem = currentChunks.find(c => c.id === chunkId)!;
+        try {
+          const res = await fetch('http://localhost:5001/api/ai/analyze-chunk', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`
+            },
+            body: JSON.stringify({ chunkText: chunkItem.text, chunkInfo: chunkItem.info })
+          });
+          if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.error || 'OpenRouter chunk extraction failure.');
+          }
+          const { clauses: extractedClauses } = await res.json();
+
+          setAnalysisChunks(prev => prev.map(c => c.id === chunkId ? { ...c, status: 'completed' as const, clauses: extractedClauses } : c));
+          return extractedClauses;
+        } catch (err: any) {
+          setAnalysisChunks(prev => prev.map(c => c.id === chunkId ? { ...c, status: 'failed' as const, error: err.message } : c));
+          throw err;
+        }
+      };
+
+      // Process queue with concurrency MAX_PARALLEL_CHUNKS=3
+      const queue = currentChunks.filter(c => c.status !== 'completed');
+      let failedAny = false;
+
+      const worker = async () => {
+        while (queue.length > 0 && !failedAny) {
+          const nextChunk = queue.shift();
+          if (!nextChunk) break;
+          try {
+            await analyzeSingleChunk(nextChunk.id);
+          } catch (err) {
+            failedAny = true;
+          }
+        }
+      };
+
+      // Launch parallel workers
+      const workers = Array.from({ length: Math.min(3, queue.length) }, () => worker());
+      await Promise.all(workers);
+
+      // Inspect final snapshot of states
+      setAnalysisChunks(latestChunks => {
+        const allCompleted = latestChunks.every(c => c.status === 'completed');
+        const anyFailed = latestChunks.some(c => c.status === 'failed');
+
+        if (allCompleted) {
+          const aggregated = latestChunks.reduce((acc, c) => [...acc, ...c.clauses], [] as any[]);
+          finalizePipeline(aggregated);
+        } else if (anyFailed) {
+          setIsAnalyzing(false);
+          setAnalysisError('One or more document chunks failed. Please review errors and click Retry.');
+        }
+        return latestChunks;
+      });
+
+    } catch (err: any) {
+      console.error('Queue execution failed:', err);
+      setAnalysisError(err.message || 'Queue execution failed.');
+      setIsAnalyzing(false);
+      const docRef = doc(db, 'contracts', contract.contractId);
+      await updateDoc(docRef, { analysisStatus: 'failed' });
+      showToast(err.message || 'Queue execution encountered an error.', 'error');
+    }
+  };
+
+  const retrySingleChunk = async (chunkId: string) => {
+    if (!contract || !currentUser) return;
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      const idToken = await currentUser.getIdToken();
+      setAnalysisChunks(prev => prev.map(c => c.id === chunkId ? { ...c, status: 'analyzing' as const, error: null } : c));
+
+      const chunkItem = analysisChunks.find(c => c.id === chunkId)!;
+      const res = await fetch('http://localhost:5001/api/ai/analyze-chunk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ chunkText: chunkItem.text, chunkInfo: chunkItem.info })
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Retry request failed.');
+      }
+      const { clauses: extractedClauses } = await res.json();
+
+      setAnalysisChunks(prev => {
+        const updated = prev.map(c => c.id === chunkId ? { ...c, status: 'completed' as const, clauses: extractedClauses, error: null } : c);
+        const allCompleted = updated.every(c => c.status === 'completed');
+        
+        if (allCompleted) {
+          const aggregated = updated.reduce((acc, c) => [...acc, ...c.clauses], [] as any[]);
+          finalizePipeline(aggregated);
+        } else {
+          setIsAnalyzing(false);
+        }
+        return updated;
+      });
+
+    } catch (err: any) {
+      console.error('Chunk retry failure:', err);
+      setAnalysisChunks(prev => prev.map(c => c.id === chunkId ? { ...c, status: 'failed' as const, error: err.message } : c));
+      setIsAnalyzing(false);
+      showToast(`Retry failed: ${err.message}`, 'error');
+    }
+  };
+
+  const finalizePipeline = async (aggregatedClauses: any[]) => {
+    if (!contract || !currentUser) return;
+    setIsAnalyzing(true);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const finalizeRes = await fetch('http://localhost:5001/api/ai/finalize-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ contractId: contract.contractId, clauses: aggregatedClauses })
+      });
+
+      if (!finalizeRes.ok) {
+        const errData = await finalizeRes.json();
+        throw new Error(errData.error || 'Deduplication and aggregation failure.');
+      }
+
+      showToast('AI analysis finalized and saved.', 'success');
+      setIsAnalyzing(false);
+      setAnalysisChunks([]);
+    } catch (err: any) {
+      console.error('Finalization process failed:', err);
+      setAnalysisError(err.message || 'Finalization failed.');
+      setIsAnalyzing(false);
+      const docRef = doc(db, 'contracts', contract.contractId);
+      await updateDoc(docRef, { analysisStatus: 'failed' });
+      showToast(err.message || 'Finalization process encountered an error.', 'error');
+    }
+  };
+
   const scrollToSection = (sectionId: string) => {
     const element = document.getElementById(`section-${sectionId}`);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      // Apply a temporary highlight effect
       element.classList.add('bg-white/5');
       setTimeout(() => {
         element.classList.remove('bg-white/5');
@@ -166,7 +464,46 @@ export const ContractDetails: React.FC = () => {
     }
   };
 
+  const jumpToClauseSection = (sectionNumber: string, sectionTitle: string) => {
+    if (!contract?.structuredText) return;
+    
+    // Switch to viewer tab first
+    setActiveTab('viewer');
+    
+    // Find closest section
+    let targetId = null;
 
+    if (sectionNumber) {
+      const match = contract.structuredText.find(
+        s => s.sectionNumber?.trim() === sectionNumber.trim()
+      );
+      if (match) targetId = match.id;
+    }
+
+    if (!targetId && sectionTitle) {
+      const normTitle = sectionTitle.toLowerCase().trim();
+      const match = contract.structuredText.find(
+        s => s.title.toLowerCase().trim().includes(normTitle) || normTitle.includes(s.title.toLowerCase().trim())
+      );
+      if (match) targetId = match.id;
+    }
+
+    if (!targetId && sectionNumber) {
+      const match = contract.structuredText.find(
+        s => s.sectionNumber?.trim().includes(sectionNumber.trim()) || sectionNumber.trim().includes(s.sectionNumber?.trim() || '---')
+      );
+      if (match) targetId = match.id;
+    }
+
+    if (targetId) {
+      // Small timeout to allow active tab repaint
+      setTimeout(() => {
+        scrollToSection(targetId);
+      }, 100);
+    } else {
+      showToast('Could not link to section inside document.', 'info');
+    }
+  };
 
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -174,6 +511,18 @@ export const ContractDetails: React.FC = () => {
     const sizes = ['Bytes', 'KB', 'MB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const getConfidenceColor = (score: number) => {
+    if (score >= 90) return 'text-green-400 bg-green-500/10 border-green-500/20';
+    if (score >= 70) return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
+    return 'text-red-400 bg-red-500/10 border-red-500/20';
+  };
+
+  const getConfidenceLabel = (score: number) => {
+    if (score >= 90) return 'Strong';
+    if (score >= 70) return 'Probable';
+    return 'Weak';
   };
 
   // Render Loading state
@@ -212,13 +561,46 @@ export const ContractDetails: React.FC = () => {
     );
   }
 
+  // Calculations: Guaranteed that contract is not null here
+  const totalClausesCount = clauses.length;
+  const missingClauses = contract.missingClauses || [];
+  const averageConfidence = contract.averageConfidence || 0;
+
+  // Filter clauses list
+  const filteredClauses = clauses.filter(c => {
+    // Search filter
+    const matchesSearch = 
+      c.clauseType.toLowerCase().includes(clauseSearch.toLowerCase()) ||
+      c.summary.toLowerCase().includes(clauseSearch.toLowerCase()) ||
+      c.fullText.toLowerCase().includes(clauseSearch.toLowerCase()) ||
+      c.keywords.some(k => k.toLowerCase().includes(clauseSearch.toLowerCase()));
+
+    // Clause Type filter
+    const matchesType = filterClauseType === 'all' || c.clauseType === filterClauseType;
+
+    // Confidence filter
+    let matchesConfidence = true;
+    if (filterConfidence === 'high') matchesConfidence = c.confidence >= 90;
+    else if (filterConfidence === 'medium') matchesConfidence = c.confidence >= 70 && c.confidence < 90;
+    else if (filterConfidence === 'low') matchesConfidence = c.confidence < 70;
+
+    return matchesSearch && matchesType && matchesConfidence;
+  });
+
+  // Category spread calculation
+  const clauseCounts = clauses.reduce((acc, c) => {
+    acc[c.clauseType] = (acc[c.clauseType] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const sortedCategories = Object.entries(clauseCounts).sort((a, b) => b[1] - a[1]);
+
   const sectionsList = contract.structuredText || [];
   const outlineItems = sectionsList.filter(sec => 
     sec.title.toLowerCase().includes(outlineSearch.toLowerCase()) || 
     (sec.sectionNumber && sec.sectionNumber.includes(outlineSearch))
   );
 
-  // Filter out children of collapsed sections
   const visibleOutlineItems = (() => {
     const items: typeof outlineItems = [];
     let currentParentCollapsed = false;
@@ -261,7 +643,7 @@ export const ContractDetails: React.FC = () => {
             download={contract.fileName}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary to-secondary px-3.5 py-2 text-2xs font-semibold text-white hover:opacity-95 shadow-md shadow-primary/10 transition-all"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary to-secondary px-3.5 py-2 text-2xs font-semibold text-white hover:opacity-95 shadow-md shadow-primary/10 transition-all cursor-pointer"
           >
             <Download size={12} />
             <span>Download Original</span>
@@ -269,13 +651,43 @@ export const ContractDetails: React.FC = () => {
         </div>
       }
     >
-      
-      {/* Top Banner Page Layout */}
+      {/* Workspace Navigation Tabs */}
+      <div className="mb-6 flex border-b border-white/5 pb-px shrink-0">
+        <button
+          onClick={() => setActiveTab('viewer')}
+          className={`relative py-3 px-6 text-2xs font-extrabold tracking-wider uppercase transition-all duration-200 cursor-pointer ${
+            activeTab === 'viewer' ? 'text-primary text-glow-primary' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <span>Document Viewer</span>
+          {activeTab === 'viewer' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-primary to-secondary" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('ai')}
+          className={`relative py-3 px-6 text-2xs font-extrabold tracking-wider uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'ai' ? 'text-cyan-400 text-glow' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Sparkles size={12} className={contract.analysisStatus === 'completed' ? 'text-cyan-400' : 'text-slate-500'} />
+          <span>AI Clause Workspace</span>
+          {contract.analysisStatus === 'completed' && (
+            <span className="ml-1 px-1.5 py-0.5 text-[8px] bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-extrabold rounded-md uppercase tracking-wide">
+              {clauses.length} Clauses
+            </span>
+          )}
+          {activeTab === 'ai' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-cyan-500 to-primary" />
+          )}
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 text-left">
         
         {/* Left Pane: Document Outline / Table of Contents (3 cols) */}
         <div className="lg:col-span-3 flex flex-col space-y-4">
-          <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md flex flex-col h-[calc(100vh-180px)] glass-panel">
+          <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md flex flex-col h-[calc(100vh-230px)] glass-panel">
             <div className="flex items-center gap-2 border-b border-white/5 pb-2">
               <List size={14} className="text-cyan-400" />
               <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Document Outline</h4>
@@ -327,7 +739,10 @@ export const ContractDetails: React.FC = () => {
                           <FileText size={10} className="shrink-0 text-slate-500 group-hover:text-cyan-400" />
                         )}
                         <span 
-                          onClick={() => scrollToSection(sec.id)}
+                          onClick={() => {
+                            setActiveTab('viewer');
+                            scrollToSection(sec.id);
+                          }}
                           className="truncate flex-1 cursor-pointer hover:underline"
                         >
                           {sec.sectionNumber && `${sec.sectionNumber} `}{sec.title}
@@ -341,241 +756,765 @@ export const ContractDetails: React.FC = () => {
           </div>
         </div>
 
-        {/* Center Pane: Real Document Viewport (6 cols) */}
+        {/* Center Pane: Active Tab (6 cols) */}
         <div className="lg:col-span-6 flex flex-col space-y-4">
-          <div className="rounded-2xl border border-white/5 bg-[#111827]/15 p-6 backdrop-blur-md flex flex-col h-[calc(100vh-180px)] glass-panel">
+          <div className="rounded-2xl border border-white/5 bg-[#111827]/15 p-6 backdrop-blur-md flex flex-col h-[calc(100vh-230px)] glass-panel">
             
-            <div className="flex items-center justify-between border-b border-white/5 pb-3 shrink-0">
-              <div className="flex items-center gap-2">
-                <FileCheck size={16} className="text-primary" />
-                {isEditingName ? (
-                  <div className="flex items-center gap-1.5">
-                    <input 
-                      type="text" 
-                      value={editedName}
-                      onChange={(e) => setEditedName(e.target.value)}
-                      className="rounded-lg border border-primary bg-black/40 py-1 px-2 text-xs text-white outline-none w-56 font-bold"
-                    />
-                    <button onClick={handleRename} className="p-1 rounded bg-green-500/10 hover:bg-green-500/20 text-green-400 cursor-pointer">
-                      <Check size={12} />
-                    </button>
-                    <button onClick={() => setIsEditingName(false)} className="p-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 cursor-pointer">
-                      <X size={12} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-heading font-extrabold text-xs uppercase tracking-wider text-slate-100 max-w-[280px] truncate">
-                      {contract.contractName}
-                    </h3>
-                    <button 
-                      onClick={() => setIsEditingName(true)}
-                      className="p-1 text-slate-500 hover:text-white transition-colors cursor-pointer"
-                    >
-                      <Edit3 size={11} />
-                    </button>
-                  </div>
-                )}
-              </div>
-              
-              <span className="text-[10px] text-slate-500 font-mono">
-                {contract.fileType.split('/').pop()?.toUpperCase() || 'DOCUMENT'}
-              </span>
-            </div>
-
-            {/* Document Reader Container */}
-            <div 
-              ref={readerContainerRef}
-              className="flex-1 overflow-y-auto mt-4 pr-3 space-y-6 scroll-smooth h-full text-xs text-slate-300 leading-relaxed border-t border-white/5 pt-4"
-            >
-              {sectionsList.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-3">
-                  <AlertTriangle className="text-amber-500 h-8 w-8" />
-                  <p className="text-2xs text-slate-400">Layout structure is empty.</p>
-                  <button onClick={handleReparse} className="rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-3xs font-semibold px-3 py-1.5 transition-colors">
-                    Re-Trigger Parse
-                  </button>
-                </div>
-              ) : (
-                sectionsList.map((sec) => {
-                  const isCollapsed = !!collapsedReaderSections[sec.id];
-                  return (
-                    <div 
-                      id={`section-${sec.id}`} 
-                      key={sec.id} 
-                      className="group scroll-mt-6 p-2.5 rounded-xl transition-all duration-300 border border-transparent hover:border-white/5 bg-white/[0.01]"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <h4 
-                          onClick={() => toggleReaderSection(sec.id)}
-                          className={`font-heading font-bold tracking-tight select-none mb-1 cursor-pointer flex-1 flex items-center gap-2 ${
-                            sec.level === 1 ? 'text-xs text-primary font-extrabold border-b border-white/5 pb-1 mt-2' :
-                            sec.level === 2 ? 'text-[11px] text-cyan-400 font-semibold' : 'text-3xs text-slate-400'
-                          }`}
-                        >
-                          {sec.sectionNumber && `${sec.sectionNumber} `}{sec.title}
-                          {isCollapsed && (
-                            <span className="text-[9px] text-slate-500 font-mono font-normal tracking-wide bg-white/5 px-1.5 py-0.5 rounded uppercase">Collapsed</span>
-                          )}
-                        </h4>
-                        <button 
-                          onClick={() => toggleReaderSection(sec.id)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white px-2 py-1 text-3xs font-semibold cursor-pointer shrink-0"
-                        >
-                          {isCollapsed ? 'Expand Content' : 'Collapse Content'}
-                        </button>
-                      </div>
-                      {!isCollapsed && (
-                        <p className="pl-3 border-l border-white/5 text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap font-sans mt-2">
-                          {sec.content}
-                        </p>
+            <AnimatePresence mode="wait">
+              {activeTab === 'viewer' && (
+                <motion.div
+                  key="viewer-tab"
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="flex flex-col h-full overflow-hidden"
+                >
+                  <div className="flex items-center justify-between border-b border-white/5 pb-3 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <FileCheck size={16} className="text-primary animate-pulse" />
+                      {isEditingName ? (
+                        <div className="flex items-center gap-1.5">
+                          <input 
+                            type="text" 
+                            value={editedName}
+                            onChange={(e) => setEditedName(e.target.value)}
+                            className="rounded-lg border border-primary bg-black/40 py-1 px-2 text-xs text-white outline-none w-56 font-bold"
+                          />
+                          <button onClick={handleRename} className="p-1 rounded bg-green-500/10 hover:bg-green-500/20 text-green-400 cursor-pointer">
+                            <Check size={12} />
+                          </button>
+                          <button onClick={() => setIsEditingName(false)} className="p-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 cursor-pointer">
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-heading font-extrabold text-xs uppercase tracking-wider text-slate-100 max-w-[280px] truncate">
+                            {contract.contractName}
+                          </h3>
+                          <button 
+                            onClick={() => setIsEditingName(true)}
+                            className="p-1 text-slate-500 hover:text-white transition-colors cursor-pointer"
+                          >
+                            <Edit3 size={11} />
+                          </button>
+                        </div>
                       )}
                     </div>
-                  );
-                })
+                    
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {contract.fileType.split('/').pop()?.toUpperCase() || 'DOCUMENT'}
+                    </span>
+                  </div>
+
+                  {/* Document Reader Container */}
+                  <div 
+                    ref={readerContainerRef}
+                    className="flex-1 overflow-y-auto mt-4 pr-3 space-y-6 scroll-smooth h-full text-xs text-slate-300 leading-relaxed border-t border-white/5 pt-4"
+                  >
+                    {sectionsList.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full text-center space-y-3">
+                        <AlertTriangle className="text-amber-500 h-8 w-8" />
+                        <p className="text-2xs text-slate-400">Layout structure is empty.</p>
+                        <button onClick={handleReparse} className="rounded-lg bg-primary/20 hover:bg-primary/30 text-primary text-3xs font-semibold px-3 py-1.5 transition-colors">
+                          Re-Trigger Parse
+                        </button>
+                      </div>
+                    ) : (
+                      sectionsList.map((sec) => {
+                        const isCollapsed = !!collapsedReaderSections[sec.id];
+                        return (
+                          <div 
+                            id={`section-${sec.id}`} 
+                            key={sec.id} 
+                            className="group scroll-mt-6 p-2.5 rounded-xl transition-all duration-300 border border-transparent hover:border-white/5 bg-white/[0.01]"
+                          >
+                            <div className="flex items-center justify-between gap-4">
+                              <h4 
+                                onClick={() => toggleReaderSection(sec.id)}
+                                className={`font-heading font-bold tracking-tight select-none mb-1 cursor-pointer flex-1 flex items-center gap-2 ${
+                                  sec.level === 1 ? 'text-xs text-primary font-extrabold border-b border-white/5 pb-1 mt-2' :
+                                  sec.level === 2 ? 'text-[11px] text-cyan-400 font-semibold' : 'text-3xs text-slate-400'
+                                }`}
+                              >
+                                {sec.sectionNumber && `${sec.sectionNumber} `}{sec.title}
+                                {isCollapsed && (
+                                  <span className="text-[9px] text-slate-500 font-mono font-normal tracking-wide bg-white/5 px-1.5 py-0.5 rounded uppercase">Collapsed</span>
+                                )}
+                              </h4>
+                              <button 
+                                onClick={() => toggleReaderSection(sec.id)}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white px-2 py-1 text-3xs font-semibold cursor-pointer shrink-0"
+                              >
+                                {isCollapsed ? 'Expand Content' : 'Collapse Content'}
+                              </button>
+                            </div>
+                            {!isCollapsed && (
+                              <p className="pl-3 border-l border-white/5 text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap font-sans mt-2">
+                                {sec.content}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </motion.div>
               )}
-            </div>
+
+              {activeTab === 'ai' && (
+                <motion.div
+                  key="ai-tab"
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="flex flex-col h-full overflow-hidden"
+                >
+                  {/* CASE 1: Analysis not started or failed */}
+                  {(!contract.analysisStatus || contract.analysisStatus === 'analysis_pending') && !isAnalyzing && (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-6">
+                      <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-cyan-500/10 blur-xl animate-pulse" />
+                        <div className="relative h-16 w-16 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 flex items-center justify-center text-cyan-400 shadow-lg shadow-cyan-500/5">
+                          <Sparkles size={32} className="animate-pulse" />
+                        </div>
+                      </div>
+                      <div className="space-y-2 max-w-sm">
+                        <h3 className="font-heading font-extrabold text-sm uppercase tracking-wider text-slate-200">Legal Clause Intelligence</h3>
+                        <p className="text-2xs text-slate-400 leading-relaxed">
+                          Extract critical clauses, classify agreements, detect omissions, and assess compliance using AI-driven legal intelligence. Uses OpenRouter backend completions.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => startOrResumeAnalysis(true)}
+                        className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-primary px-6 py-3 text-xs font-bold text-white hover:opacity-95 shadow-lg shadow-cyan-500/10 transition-all cursor-pointer"
+                      >
+                        <Play size={14} className="fill-current" />
+                        <span>Initialize AI Clause Analysis</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* CASE 2: Analysis is currently running */}
+                  {(isAnalyzing || (contract.analysisStatus === 'analyzing' && analysisChunks.length > 0)) && (
+                    <div className="flex-1 flex flex-col h-full justify-between p-2 space-y-6">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                          <RefreshCw size={14} className="animate-spin text-cyan-400" />
+                          <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">AI Chunking Queue Manager</h4>
+                        </div>
+
+                        {/* Overview progress bar */}
+                        {(() => {
+                          const completed = analysisChunks.filter(c => c.status === 'completed').length;
+                          const total = analysisChunks.length;
+                          const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+                          return (
+                            <div className="space-y-2 bg-black/20 border border-white/5 p-4 rounded-xl">
+                              <div className="flex justify-between items-center text-3xs font-extrabold uppercase tracking-wider text-slate-400">
+                                <span>Running Chunk Extraction</span>
+                                <span>{completed} / {total} Chunks ({pct}%)</span>
+                              </div>
+                              <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                                <div 
+                                  className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-primary transition-all duration-500"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        {analysisError && (
+                          <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 flex items-start gap-2.5 text-3xs text-red-400">
+                            <AlertCircle size={14} className="shrink-0" />
+                            <div className="space-y-1">
+                              <span className="block font-bold">Extraction Interrupted</span>
+                              <p className="leading-relaxed">{analysisError}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* List of queue items */}
+                        <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-420px)] pr-1">
+                          {analysisChunks.map((chunk) => (
+                            <div key={chunk.id} className="flex items-center justify-between rounded-xl bg-white/[0.02] border border-white/5 p-3 text-3xs font-medium">
+                              <div className="flex items-center gap-2.5">
+                                {chunk.status === 'pending' && <div className="h-1.5 w-1.5 rounded-full bg-slate-600 animate-pulse" />}
+                                {chunk.status === 'analyzing' && <RefreshCw size={12} className="animate-spin text-cyan-400" />}
+                                {chunk.status === 'completed' && <CheckCircle2 size={12} className="text-green-400" />}
+                                {chunk.status === 'failed' && <AlertCircle size={12} className="text-red-400" />}
+                                
+                                <span className="text-slate-300 font-bold uppercase tracking-wider">{chunk.info}</span>
+                              </div>
+                              
+                              <div className="flex items-center gap-2.5">
+                                {chunk.status === 'failed' && (
+                                  <button
+                                    onClick={() => retrySingleChunk(chunk.id)}
+                                    className="rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 px-2 py-0.5 text-[9px] font-extrabold uppercase transition-colors cursor-pointer"
+                                  >
+                                    Retry
+                                  </button>
+                                )}
+                                
+                                <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                                  chunk.status === 'completed' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                                  chunk.status === 'failed' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                  chunk.status === 'analyzing' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 animate-pulse' :
+                                  'bg-slate-500/10 text-slate-400 border border-slate-500/10'
+                                }`}>
+                                  {chunk.status}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {analysisError && (
+                        <div className="flex justify-end gap-2 shrink-0">
+                          <button
+                            onClick={() => startOrResumeAnalysis(false)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-2xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+                          >
+                            <RefreshCw size={12} />
+                            <span>Resume Analysis</span>
+                          </button>
+                          <button
+                            onClick={() => startOrResumeAnalysis(true)}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-primary px-4 py-2.5 text-2xs font-semibold text-white hover:opacity-95 transition-all cursor-pointer"
+                          >
+                            <Play size={12} />
+                            <span>Restart Fresh</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CASE 3: Interrupted / Empty states when state has lost chunks */}
+                  {contract.analysisStatus === 'analyzing' && !isAnalyzing && analysisChunks.length === 0 && (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-6">
+                      <AlertTriangle className="text-amber-500 h-10 w-10 animate-bounce" />
+                      <div className="space-y-2 max-w-sm">
+                        <h3 className="font-heading font-extrabold text-sm uppercase tracking-wider text-slate-200">Analysis Incomplete</h3>
+                        <p className="text-2xs text-slate-400 leading-relaxed">
+                          The client-orchestrated analysis loop was interrupted (due to a browser reload or exit). You can restart or resume extraction.
+                        </p>
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => startOrResumeAnalysis(true)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-primary px-5 py-2.5 text-2xs font-bold text-white hover:opacity-95 transition-all cursor-pointer"
+                        >
+                          <Play size={12} />
+                          <span>Restart Analysis</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CASE 4: Analysis has completed */}
+                  {contract.analysisStatus === 'completed' && !isAnalyzing && (
+                    <div className="flex-1 flex flex-col h-full overflow-hidden">
+                      
+                      {/* Filter Toolbelt */}
+                      <div className="border-b border-white/5 pb-3.5 mb-4 space-y-3 shrink-0">
+                        <div className="flex gap-2">
+                          {/* Search bar */}
+                          <div className="relative flex-1">
+                            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                            <input
+                              type="text"
+                              placeholder="Search extracted clauses, summaries, keywords..."
+                              value={clauseSearch}
+                              onChange={(e) => setClauseSearch(e.target.value)}
+                              className="w-full rounded-xl border border-white/5 bg-black/30 py-2 pl-8 pr-4 text-2xs text-slate-300 placeholder-slate-600 outline-none focus:border-cyan-500 transition-colors"
+                            />
+                          </div>
+                          
+                          {/* Toggle Detected vs Missing */}
+                          <button
+                            onClick={() => setShowMissingToggle(prev => !prev)}
+                            className={`rounded-xl border px-3 py-2 text-2xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                              showMissingToggle 
+                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' 
+                                : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            <AlertTriangle size={12} />
+                            <span>{showMissingToggle ? 'Show Extracted' : `Show Missing (${missingClauses.length})`}</span>
+                          </button>
+                        </div>
+
+                        {!showMissingToggle && (
+                          <div className="flex gap-2">
+                            {/* Type filter */}
+                            <select
+                              value={filterClauseType}
+                              onChange={(e) => setFilterClauseType(e.target.value)}
+                              className="rounded-xl border border-white/5 bg-black/30 py-1.5 px-3 text-3xs text-slate-300 outline-none focus:border-cyan-500 flex-1"
+                            >
+                              <option value="all">All Clause Types</option>
+                              {REQUIRED_CLAUSE_TYPES.map(type => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+
+                            {/* Confidence filter */}
+                            <select
+                              value={filterConfidence}
+                              onChange={(e) => setFilterConfidence(e.target.value as any)}
+                              className="rounded-xl border border-white/5 bg-black/30 py-1.5 px-3 text-3xs text-slate-300 outline-none focus:border-cyan-500 w-36"
+                            >
+                              <option value="all">All Confidence</option>
+                              <option value="high">Strong Match (90%+)</option>
+                              <option value="medium">Probable Match (70-89%)</option>
+                              <option value="low">Weak Match (under 70%)</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Interactive Repository Scrolling list */}
+                      <div className="flex-1 overflow-y-auto space-y-3.5 pr-2">
+                        {showMissingToggle ? (
+                          // Missing expected clauses rendering
+                          missingClauses.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center text-center p-8 space-y-2 border border-dashed border-white/5 rounded-2xl bg-white/[0.01]">
+                              <CheckCircle2 className="text-green-400 h-8 w-8" />
+                              <h5 className="font-heading font-extrabold text-2xs uppercase text-slate-200">All Protections Present</h5>
+                              <p className="text-3xs text-slate-500">Every single one of the 15 supported standard legal clauses was successfully detected.</p>
+                            </div>
+                          ) : (
+                            missingClauses.map((missingType: string) => (
+                              <div key={missingType} className="rounded-xl border border-red-500/10 bg-red-500/3 p-4 space-y-2 border-l-2 border-l-red-500/60">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-heading font-bold text-2xs uppercase text-slate-200">{missingType}</span>
+                                  <span className="rounded bg-red-500/10 px-2 py-0.5 text-[8px] font-extrabold uppercase text-red-400 tracking-wide border border-red-500/20">
+                                    Omitted Clause
+                                  </span>
+                                </div>
+                                <p className="text-3xs text-slate-400 leading-normal">
+                                  This standard clause was not found in the parsed contract sections. Its absence may expose you to legal gaps, liabilities, or regulatory vulnerability.
+                                </p>
+                              </div>
+                            ))
+                          )
+                        ) : (
+                          // Detected clauses list
+                          filteredClauses.length === 0 ? (
+                            <p className="text-3xs text-slate-500 text-center py-8">No clauses matched filters.</p>
+                          ) : (
+                            filteredClauses.map((clause) => {
+                              const isExpanded = !!expandedClauses[clause.clauseId];
+                              return (
+                                <div 
+                                  key={clause.clauseId}
+                                  className="rounded-xl border border-white/5 bg-[#111827]/30 hover:border-white/10 transition-all overflow-hidden"
+                                >
+                                  {/* Header bar click to expand */}
+                                  <div 
+                                    onClick={() => toggleClauseExpand(clause.clauseId)}
+                                    className="p-4 flex items-center justify-between gap-4 cursor-pointer select-none bg-white/[0.01]"
+                                  >
+                                    <div className="space-y-1 text-left min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-heading font-extrabold text-2xs uppercase text-cyan-400 truncate max-w-[200px]">
+                                          {clause.clauseType}
+                                        </span>
+                                        {clause.sectionNumber && (
+                                          <span className="text-[10px] font-mono font-bold text-slate-400 bg-white/5 border border-white/5 px-1.5 py-0.5 rounded">
+                                            Section {clause.sectionNumber}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <h4 className="text-[11px] text-slate-300 font-bold truncate">
+                                        {clause.sectionTitle || 'Clause Section'}
+                                      </h4>
+                                    </div>
+
+                                    <div className="flex items-center gap-2.5 shrink-0">
+                                      <span className={`px-2 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wide border ${getConfidenceColor(clause.confidence)}`}>
+                                        {clause.confidence}% {getConfidenceLabel(clause.confidence)}
+                                      </span>
+                                      {isExpanded ? <ChevronDown size={14} className="text-slate-500" /> : <ChevronRight size={14} className="text-slate-500" />}
+                                    </div>
+                                  </div>
+
+                                  {/* Expanded content body */}
+                                  <AnimatePresence>
+                                    {isExpanded && (
+                                      <motion.div
+                                        initial={{ height: 0 }}
+                                        animate={{ height: 'auto' }}
+                                        exit={{ height: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                        className="border-t border-white/5 overflow-hidden"
+                                      >
+                                        <div className="p-4 space-y-4 text-3xs leading-relaxed">
+                                          {/* Summary summary */}
+                                          <div className="space-y-1">
+                                            <span className="block font-bold text-slate-500 uppercase tracking-wide text-[9px]">Summary Analysis</span>
+                                            <p className="text-slate-300 leading-normal font-sans bg-white/[0.01] border border-white/3 rounded-lg p-2.5">
+                                              {clause.summary}
+                                            </p>
+                                          </div>
+
+                                          {/* Verbatim text block */}
+                                          <div className="space-y-1">
+                                            <div className="flex justify-between items-center">
+                                              <span className="block font-bold text-slate-500 uppercase tracking-wide text-[9px]">Verbatim Document Excerpt</span>
+                                              <button 
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  navigator.clipboard.writeText(clause.fullText);
+                                                  showToast('Clause text copied to clipboard.', 'success');
+                                                }}
+                                                className="text-slate-500 hover:text-white transition-colors p-1 cursor-pointer"
+                                                title="Copy Excerpt"
+                                              >
+                                                <Copy size={10} />
+                                              </button>
+                                            </div>
+                                            <pre className="font-mono text-slate-400 bg-black/40 border border-white/3 rounded-lg p-3 whitespace-pre-wrap leading-relaxed max-h-[160px] overflow-y-auto">
+                                              {clause.fullText}
+                                            </pre>
+                                          </div>
+
+                                          {/* Keywords & section jumps */}
+                                          <div className="flex items-center justify-between gap-4 flex-wrap border-t border-white/3 pt-3">
+                                            {/* Keyword Pills */}
+                                            <div className="flex flex-wrap gap-1">
+                                              {clause.keywords.map((kw, i) => (
+                                                <span key={i} className="px-2 py-0.5 rounded-full bg-white/5 border border-white/3 text-[9px] text-slate-500 lowercase font-medium">
+                                                  #{kw}
+                                                </span>
+                                              ))}
+                                            </div>
+
+                                            {/* Jump to section */}
+                                            <button
+                                              onClick={() => jumpToClauseSection(clause.sectionNumber, clause.sectionTitle)}
+                                              className="inline-flex items-center gap-1 rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 px-2 py-1 hover:bg-cyan-500/20 font-semibold cursor-pointer transition-colors"
+                                            >
+                                              <span>Jump to Section</span>
+                                              <ArrowUpRight size={10} />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+
+                                </div>
+                              );
+                            })
+                          )
+                        )}
+                      </div>
+
+                    </div>
+                  )}
+
+                </motion.div>
+              )}
+            </AnimatePresence>
 
           </div>
         </div>
 
-        {/* Right Pane: Metadata Properties & Stats (3 cols) */}
+        {/* Right Pane: Adapt depending on Tab (3 cols) */}
         <div className="lg:col-span-3 space-y-4">
           
-          {/* Section: Properties Metadata */}
-          <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-4 glass-panel">
-            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
-              <Sparkles size={14} className="text-primary" />
-              <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Extracted Metadata</h4>
-            </div>
-
-            <div className="space-y-3.5 text-2xs">
-              
-              {/* Category */}
-              <div className="space-y-1">
-                <span className="block text-3xs font-extrabold uppercase text-slate-500 tracking-wider">Category</span>
-                {isEditingCategory ? (
-                  <select 
-                    value={editedCategory} 
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                    className="w-full rounded-lg border border-primary bg-[#111827] py-1.5 px-2.5 text-3xs text-slate-200 outline-none"
-                    autoFocus
-                    onBlur={() => setIsEditingCategory(false)}
-                  >
-                    {['NDA', 'Employment', 'Vendor', 'Partnership', 'SaaS', 'DPA', 'Other'].map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-0.5 text-3xs font-bold uppercase text-cyan-400">
-                      {contract.contractCategory}
-                    </span>
-                    <button 
-                      onClick={() => setIsEditingCategory(true)}
-                      className="text-slate-500 hover:text-white transition-colors cursor-pointer"
-                    >
-                      <Edit3 size={10} />
-                    </button>
+          <AnimatePresence mode="wait">
+            {activeTab === 'viewer' ? (
+              // Standard Details sidebar for Viewer mode
+              <motion.div
+                key="viewer-sidebar"
+                initial={{ opacity: 0, x: 5 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -5 }}
+                className="space-y-4"
+              >
+                {/* Properties Metadata */}
+                <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-4 glass-panel">
+                  <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                    <Sparkles size={14} className="text-primary animate-pulse" />
+                    <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Extracted Metadata</h4>
                   </div>
-                )}
-              </div>
 
-              {/* Parties */}
-              <div className="space-y-1">
-                <span className="block text-3xs font-extrabold uppercase text-slate-500 tracking-wider">Identified Parties</span>
-                {contract.parties.length === 0 ? (
-                  <span className="text-slate-500 italic">None detected</span>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
-                    {contract.parties.map((party, index) => (
-                      <span key={index} className="rounded bg-white/5 border border-white/5 px-2 py-0.5 text-[10px] text-slate-300 font-semibold truncate max-w-full">
-                        {party}
+                  <div className="space-y-3.5 text-2xs">
+                    
+                    {/* Category */}
+                    <div className="space-y-1">
+                      <span className="block text-3xs font-extrabold uppercase text-slate-500 tracking-wider">Category</span>
+                      {isEditingCategory ? (
+                        <select 
+                          value={editedCategory} 
+                          onChange={(e) => handleCategoryChange(e.target.value)}
+                          className="w-full rounded-lg border border-primary bg-[#111827] py-1.5 px-2.5 text-3xs text-slate-200 outline-none"
+                          autoFocus
+                          onBlur={() => setIsEditingCategory(false)}
+                        >
+                          {['NDA', 'Employment', 'Vendor', 'Partnership', 'SaaS', 'DPA', 'Other'].map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-0.5 text-3xs font-bold uppercase text-cyan-400">
+                            {contract.contractCategory}
+                          </span>
+                          <button 
+                            onClick={() => setIsEditingCategory(true)}
+                            className="text-slate-500 hover:text-white transition-colors cursor-pointer"
+                          >
+                            <Edit3 size={10} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Parties */}
+                    <div className="space-y-1">
+                      <span className="block text-3xs font-extrabold uppercase text-slate-500 tracking-wider">Identified Parties</span>
+                      {contract.parties.length === 0 ? (
+                        <span className="text-slate-500 italic">None detected</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {contract.parties.map((party, index) => (
+                            <span key={index} className="rounded bg-white/5 border border-white/5 px-2 py-0.5 text-[10px] text-slate-300 font-semibold truncate max-w-full">
+                              {party}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Effective Date */}
+                    <div className="space-y-1">
+                      <span className="block text-3xs font-extrabold uppercase text-slate-500 tracking-wider">Effective Date</span>
+                      <span className="font-mono text-slate-300 font-bold block bg-black/10 border border-white/3 rounded-lg p-2">
+                        {contract.effectiveDate || 'Not Detected'}
                       </span>
-                    ))}
+                    </div>
+
+                    {/* Expiration Date */}
+                    <div className="space-y-1">
+                      <span className="block text-3xs font-extrabold uppercase text-slate-500 tracking-wider">Expiration Date</span>
+                      <span className="font-mono text-slate-300 font-bold block bg-black/10 border border-white/3 rounded-lg p-2">
+                        {contract.expirationDate || 'Not Detected'}
+                      </span>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* Document Statistics */}
+                <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-4 glass-panel">
+                  <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                    <Layers size={14} className="text-slate-400" />
+                    <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Document Metrics</h4>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-2xs text-left">
+                    <div className="rounded-xl bg-black/10 border border-white/3 p-3">
+                      <span className="block text-3xs text-slate-500 uppercase font-bold">Page Count</span>
+                      <span className="mt-1 block text-sm font-extrabold text-slate-200 font-mono">
+                        {contract.pageCount}
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-black/10 border border-white/3 p-3">
+                      <span className="block text-3xs text-slate-500 uppercase font-bold">Word Count</span>
+                      <span className="mt-1 block text-sm font-extrabold text-slate-200 font-mono">
+                        {contract.wordCount.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-black/10 border border-white/3 p-3">
+                      <span className="block text-3xs text-slate-500 uppercase font-bold">Section Nodes</span>
+                      <span className="mt-1 block text-sm font-extrabold text-slate-200 font-mono">
+                        {sectionsList.length}
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-black/10 border border-white/3 p-3">
+                      <span className="block text-3xs text-slate-500 uppercase font-bold">File Size</span>
+                      <span className="mt-1 block text-sm font-extrabold text-slate-200 font-mono">
+                        {formatBytes(contract.fileSize)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/5 pt-3 space-y-2 text-3xs text-slate-500 font-mono">
+                    <div className="flex items-center justify-between">
+                      <span>Upload date:</span>
+                      <span>{new Date(contract.uploadDate).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>File extension:</span>
+                      <span>{contract.fileName.split('.').pop()?.toUpperCase()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section: Operational purging controls */}
+                <div className="rounded-2xl border border-red-500/10 bg-red-500/3 p-4 space-y-3 glass-panel">
+                  <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-red-400">Destructive Actions</h4>
+                  <p className="text-[10px] text-slate-400 leading-normal">
+                    Permanently delete this contract, its layout partitions, and its parsed text representations.
+                  </p>
+                  <button 
+                    onClick={() => setShowDeleteModal(true)}
+                    className="w-full rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 py-2 text-2xs font-semibold border border-red-500/10 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Trash2 size={12} />
+                    <span>Purge Agreement</span>
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              // AI Intelligence Workspace Details Sidebar
+              <motion.div
+                key="ai-sidebar"
+                initial={{ opacity: 0, x: -5 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 5 }}
+                className="space-y-4"
+              >
+                {/* AI Statistics Workspace card */}
+                {contract.analysisStatus === 'completed' && (
+                  <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-4 glass-panel">
+                    <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                      <Sparkles size={14} className="text-cyan-400 animate-glow" />
+                      <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Clause Extract Overview</h4>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-2xs text-left">
+                      <div className="rounded-xl bg-black/10 border border-white/3 p-3 col-span-2 flex justify-between items-center">
+                        <div>
+                          <span className="block text-3xs text-slate-500 uppercase font-bold">Total Extracted</span>
+                          <span className="mt-1 block text-lg font-extrabold text-cyan-400 font-mono text-glow">
+                            {totalClausesCount}
+                          </span>
+                        </div>
+                        <CheckCircle2 size={24} className="text-cyan-500/40" />
+                      </div>
+                      
+                      <div className="rounded-xl bg-black/10 border border-white/3 p-3">
+                        <span className="block text-3xs text-slate-500 uppercase font-bold">Omitted Clauses</span>
+                        <span className="mt-1 block text-sm font-extrabold text-amber-400 font-mono">
+                          {missingClauses.length}
+                        </span>
+                      </div>
+                      
+                      <div className="rounded-xl bg-black/10 border border-white/3 p-3">
+                        <span className="block text-3xs text-slate-500 uppercase font-bold">Avg AI Confidence</span>
+                        <span className={`mt-1 block text-sm font-extrabold font-mono ${
+                          averageConfidence >= 90 ? 'text-green-400' : averageConfidence >= 70 ? 'text-amber-400' : 'text-red-400'
+                        }`}>
+                          {averageConfidence}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Trigger re-run */}
+                    {!isAnalyzing && (
+                      <button
+                        onClick={() => startOrResumeAnalysis(true)}
+                        className="w-full rounded-xl border border-cyan-500/10 bg-cyan-500/5 hover:bg-cyan-500/10 text-cyan-400 py-2 text-2xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <RefreshCw size={12} />
+                        <span>Re-Analyze Contract</span>
+                      </button>
+                    )}
                   </div>
                 )}
-              </div>
 
-              {/* Effective Date */}
-              <div className="space-y-1">
-                <span className="block text-3xs font-extrabold uppercase text-slate-500 tracking-wider">Effective Date</span>
-                <span className="font-mono text-slate-300 font-bold block bg-black/10 border border-white/3 rounded-lg p-2">
-                  {contract.effectiveDate || 'Not Detected'}
-                </span>
-              </div>
+                {/* Categories Count Progress Chart */}
+                {contract.analysisStatus === 'completed' && sortedCategories.length > 0 && (
+                  <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-3 glass-panel">
+                    <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                      <Layers size={14} className="text-slate-400" />
+                      <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Category Spread</h4>
+                    </div>
 
-              {/* Expiration Date */}
-              <div className="space-y-1">
-                <span className="block text-3xs font-extrabold uppercase text-slate-500 tracking-wider">Expiration Date</span>
-                <span className="font-mono text-slate-300 font-bold block bg-black/10 border border-white/3 rounded-lg p-2">
-                  {contract.expirationDate || 'Not Detected'}
-                </span>
-              </div>
+                    <div className="space-y-3 overflow-y-auto max-h-[190px] pr-1">
+                      {sortedCategories.map(([category, count]) => {
+                        const pct = Math.max((count / totalClausesCount) * 100, 5);
+                        return (
+                          <div key={category} className="space-y-1">
+                            <div className="flex justify-between text-3xs font-semibold uppercase tracking-wider text-slate-400">
+                              <span className="truncate max-w-[140px]">{category}</span>
+                              <span className="font-mono text-slate-200">{count}</span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+                              <div 
+                                className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-primary"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
-            </div>
-          </div>
+                {/* Risk Checklist Advisor */}
+                {contract.analysisStatus === 'completed' && (
+                  <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-3.5 glass-panel">
+                    <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                      <ShieldAlert size={14} className="text-amber-500 animate-pulse" />
+                      <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Risk Assessment Advisor</h4>
+                    </div>
 
-          {/* Section: Document Statistics */}
-          <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-4 glass-panel">
-            <div className="flex items-center gap-2 border-b border-white/5 pb-2">
-              <Layers size={14} className="text-slate-400" />
-              <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Document Metrics</h4>
-            </div>
+                    {(() => {
+                      const criticalMissing = ['Indemnity', 'Limitation of Liability', 'Termination', 'Governing Law'].filter(
+                        c => missingClauses.includes(c)
+                      );
 
-            <div className="grid grid-cols-2 gap-3 text-2xs text-left">
-              <div className="rounded-xl bg-black/10 border border-white/3 p-3">
-                <span className="block text-3xs text-slate-500 uppercase font-bold">Page Count</span>
-                <span className="mt-1 block text-sm font-extrabold text-slate-200 font-mono">
-                  {contract.pageCount}
-                </span>
-              </div>
-              <div className="rounded-xl bg-black/10 border border-white/3 p-3">
-                <span className="block text-3xs text-slate-500 uppercase font-bold">Word Count</span>
-                <span className="mt-1 block text-sm font-extrabold text-slate-200 font-mono">
-                  {contract.wordCount.toLocaleString()}
-                </span>
-              </div>
-              <div className="rounded-xl bg-black/10 border border-white/3 p-3">
-                <span className="block text-3xs text-slate-500 uppercase font-bold">Section Nodes</span>
-                <span className="mt-1 block text-sm font-extrabold text-slate-200 font-mono">
-                  {sectionsList.length}
-                </span>
-              </div>
-              <div className="rounded-xl bg-black/10 border border-white/3 p-3">
-                <span className="block text-3xs text-slate-500 uppercase font-bold">File Size</span>
-                <span className="mt-1 block text-sm font-extrabold text-slate-200 font-mono">
-                  {formatBytes(contract.fileSize)}
-                </span>
-              </div>
-            </div>
+                      if (criticalMissing.length > 0) {
+                        return (
+                          <div className="space-y-3.5 text-3xs">
+                            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 space-y-1.5 leading-relaxed">
+                              <div className="flex items-center gap-1.5 text-amber-400 font-bold">
+                                <AlertTriangle size={12} />
+                                <span>Critical Omissions Detected</span>
+                              </div>
+                              <p className="text-slate-400">
+                                This agreement is missing key protection mechanisms. Add these to avoid exposure:
+                              </p>
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {criticalMissing.map(c => (
+                                  <span key={c} className="px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20 text-red-400 font-bold uppercase tracking-wider">
+                                    {c}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <p className="text-slate-500 leading-normal">
+                              JurisAI suggests negotiating clauses for Indemnity and Limitation of Liability immediately to hedge downside risks.
+                            </p>
+                          </div>
+                        );
+                      }
 
-            <div className="border-t border-white/5 pt-3 space-y-2 text-3xs text-slate-500 font-mono">
-              <div className="flex items-center justify-between">
-                <span>Upload date:</span>
-                <span>{new Date(contract.uploadDate).toLocaleDateString()}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>File extension:</span>
-                <span>{contract.fileName.split('.').pop()?.toUpperCase()}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Section: Operational purging controls */}
-          <div className="rounded-2xl border border-red-500/10 bg-red-500/3 p-4 space-y-3 glass-panel">
-            <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-red-400">Destructive Actions</h4>
-            <p className="text-[10px] text-slate-400 leading-normal">
-              Permanently delete this contract, its layout partitions, and its parsed text representations.
-            </p>
-            <button 
-              onClick={() => setShowDeleteModal(true)}
-              className="w-full rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 py-2 text-2xs font-semibold border border-red-500/10 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Trash2 size={12} />
-              <span>Purge Agreement</span>
-            </button>
-          </div>
+                      return (
+                        <div className="rounded-xl border border-green-500/20 bg-green-500/5 p-3 flex items-start gap-2 text-3xs leading-relaxed text-slate-400">
+                          <CheckCircle2 size={12} className="text-green-400 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <span className="block font-bold text-green-400">Safe Baseline Verified</span>
+                            <p>All core protection safeguards (Liability caps, Indemnities, Governing Law, Termination) are structured into this contract document.</p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
         </div>
 
@@ -584,7 +1523,7 @@ export const ContractDetails: React.FC = () => {
       {/* CONFIRM DELETE MODAL DIALOG */}
       {showDeleteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-red-500/10 bg-[#111827] p-5 shadow-2xl space-y-4 text-center">
+          <div className="w-full max-w-sm rounded-2xl border border-red-500/10 bg-[#111827] p-5 shadow-2xl space-y-4 text-center glass-panel">
             <div className="flex justify-center text-red-400">
               <Trash2 size={36} />
             </div>
