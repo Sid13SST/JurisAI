@@ -29,4 +29,7 @@ export interface Contract {
   rawText?: string;
   structuredText?: StructuredSection[];
   analysisStatus?: 'analysis_pending' | 'analyzing' | 'completed' | 'failed';
+  missingClauses?: string[];
+  averageConfidence?: number;
+  clauseCount?: number;
 }
