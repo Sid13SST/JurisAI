@@ -39,6 +39,7 @@ export const Register: React.FC = () => {
       showToast('Registration successful! Welcome to JurisAI.', 'success');
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
+      console.error('JurisAI Register Error:', err);
       const errMsg = getFirebaseErrorMessage(err?.code || 'custom');
       showToast(errMsg, 'error');
     } finally {
@@ -53,6 +54,7 @@ export const Register: React.FC = () => {
       showToast('Successfully authenticated with Google.', 'success');
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
+      console.error('JurisAI Google Sign-up Error:', err);
       const errMsg = getFirebaseErrorMessage(err?.code || 'custom');
       showToast(errMsg, 'error');
     } finally {

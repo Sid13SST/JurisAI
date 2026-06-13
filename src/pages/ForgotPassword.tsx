@@ -43,6 +43,7 @@ export const ForgotPassword: React.FC = () => {
       setCountdown(60); // 60 second cooldown for resending
       showToast('Password reset link sent! Check your inbox.', 'success');
     } catch (err: any) {
+      console.error('JurisAI Forgot Password Error:', err);
       const errMsg = getFirebaseErrorMessage(err?.code || 'custom');
       showToast(errMsg, 'error');
     } finally {
@@ -58,6 +59,7 @@ export const ForgotPassword: React.FC = () => {
       setCountdown(60);
       showToast('A new reset link has been sent to your email.', 'success');
     } catch (err: any) {
+      console.error('JurisAI Resend Forgot Password Error:', err);
       const errMsg = getFirebaseErrorMessage(err?.code || 'custom');
       showToast(errMsg, 'error');
     } finally {

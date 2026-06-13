@@ -56,6 +56,7 @@ export const Login: React.FC = () => {
       showToast('Authentication successful. Welcome to JurisAI!', 'success');
       navigate(from + fromSearch, { replace: true });
     } catch (err: any) {
+      console.error('JurisAI Login Error:', err);
       const errMsg = getFirebaseErrorMessage(err?.code || 'custom');
       showToast(errMsg, 'error');
     } finally {
@@ -70,6 +71,7 @@ export const Login: React.FC = () => {
       showToast('Successfully logged in with Google.', 'success');
       navigate(from + fromSearch, { replace: true });
     } catch (err: any) {
+      console.error('JurisAI Google Login Error:', err);
       const errMsg = getFirebaseErrorMessage(err?.code || 'custom');
       showToast(errMsg, 'error');
     } finally {
