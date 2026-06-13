@@ -67,6 +67,7 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
     setProgress(0);
 
     try {
+      console.log('ContractUploader: Starting file upload flow for file:', file.name);
       setStep('uploading');
       setProgress(25);
 
@@ -84,12 +85,14 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
       });
       reader.readAsDataURL(file);
       const fileBase64 = await base64Promise;
+      console.log('ContractUploader: File successfully converted to Base64 (length:', fileBase64.length, ')');
 
       setProgress(50);
       setStep('parsing');
 
       const fileTypeVal = file.type || (isPdfExtension ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
+      console.log('ContractUploader: Sending POST request to backend /api/contracts/upload-and-parse...');
       // 2. Upload and Parse directly on local backend (requires no external GCP credentials)
       const response = await fetch('http://localhost:5001/api/contracts/upload-and-parse', {
         method: 'POST',
@@ -106,15 +109,19 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
         })
       });
 
+      console.log('ContractUploader: Backend fetch response received. Status:', response.status);
       setProgress(75);
       setStep('extracting');
 
       if (!response.ok) {
         const errData = await response.json();
+        console.error('ContractUploader: Backend returned error response:', errData);
         throw new Error(errData.error || 'Server failed to process and parse document.');
       }
 
+      console.log('ContractUploader: Reading JSON response...');
       const resData = await response.json();
+      console.log('ContractUploader: Parsed data received successfully from server:', resData);
 
       // 3. Write parsed contract record to Firestore from Client SDK (authenticated & free)
       const downloadUrl = `http://localhost:5001/api/contracts/download/${currentUser.uid}/${contractId}?fileName=${encodeURIComponent(file.name)}&fileType=${encodeURIComponent(fileTypeVal)}`;
@@ -141,7 +148,9 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
         analysisStatus: 'analysis_pending'
       };
 
+      console.log('ContractUploader: Writing contract document to Firestore (path: contracts/' + contractId + ')...');
       await setDoc(contractDocRef, contractData);
+      console.log('ContractUploader: Firestore document write completed successfully!');
 
       setProgress(100);
       setStep('completed');
