@@ -40,6 +40,12 @@ export const Contracts: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [sortBy, setSortBy] = useState<string>('date-desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory, selectedStatus, sortBy]);
 
   // Modals & Action States
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -183,6 +189,12 @@ export const Contracts: React.FC = () => {
       return 0;
     });
 
+  const totalPages = Math.ceil(processedContracts.length / itemsPerPage);
+  const paginatedContracts = processedContracts.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   const categories: ContractCategory[] = ['NDA', 'Employment', 'Vendor', 'Partnership', 'SaaS', 'DPA', 'Other'];
   const statuses: ContractStatus[] = ['uploaded', 'processing', 'parsed', 'analysis_pending'];
 
@@ -310,7 +322,7 @@ export const Contracts: React.FC = () => {
         
         /* Grid Layout */
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 text-left">
-          {processedContracts.map((contract) => (
+          {paginatedContracts.map((contract) => (
             <div 
               key={contract.contractId}
               className="group relative overflow-hidden rounded-2xl border border-white/5 bg-[#111827]/30 p-5 backdrop-blur-md transition-all duration-300 hover:border-primary/30 hover:bg-[#111827]/50 hover:shadow-[0_0_25px_rgba(6,182,212,0.04)] flex flex-col justify-between"
@@ -441,7 +453,7 @@ export const Contracts: React.FC = () => {
         
         /* List Layout */
         <div className="space-y-3 text-left">
-          {processedContracts.map((contract) => (
+          {paginatedContracts.map((contract) => (
             <div 
               key={contract.contractId}
               className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-white/5 bg-[#111827]/20 p-4 hover:border-primary/20 hover:bg-[#111827]/40 transition-all duration-300"
@@ -508,6 +520,34 @@ export const Contracts: React.FC = () => {
 
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-white/5 pt-6 mt-6">
+          <p className="text-3xs text-slate-500 font-mono font-medium">
+            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, processedContracts.length)} of {processedContracts.length} agreements
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="rounded-lg border border-white/5 bg-[#111827]/30 px-3 py-1.5 text-3xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              Previous
+            </button>
+            <span className="text-3xs font-mono text-slate-400 font-semibold px-2">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="rounded-lg border border-white/5 bg-[#111827]/30 px-3 py-1.5 text-3xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
 

@@ -68,12 +68,16 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
     setProgress(0);
 
     const contractId = Math.random().toString(36).substring(2, 15);
-    const storagePath = `users/${currentUser.uid}/contracts/${contractId}/${file.name}`;
+    const storagePath = `users/${currentUser.uid}/contracts/${contractId}/original-file`;
     const storageRef = ref(storage, storagePath);
 
     try {
       // 2. Upload to Firebase Storage
-      const uploadTask = uploadBytesResumable(storageRef, file);
+      const metadata = {
+        contentType: file.type || (isPdfExtension ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+        contentDisposition: `attachment; filename="${file.name}"`
+      };
+      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
 
       await new Promise<void>((resolve, reject) => {
         uploadTask.on(

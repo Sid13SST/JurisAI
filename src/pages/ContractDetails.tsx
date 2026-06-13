@@ -13,7 +13,9 @@ import {
   FileCheck,
   Check,
   X,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { PageContainer } from '../components/layout/PageContainer';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,12 +37,22 @@ export const ContractDetails: React.FC = () => {
 
   // Outline/TOC filtering
   const [outlineSearch, setOutlineSearch] = useState('');
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [collapsedReaderSections, setCollapsedReaderSections] = useState<Record<string, boolean>>({});
 
   // Editing state
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editedCategory, setEditedCategory] = useState('');
+
+  const toggleSection = (secId: string) => {
+    setCollapsedSections(prev => ({ ...prev, [secId]: !prev[secId] }));
+  };
+
+  const toggleReaderSection = (secId: string) => {
+    setCollapsedReaderSections(prev => ({ ...prev, [secId]: !prev[secId] }));
+  };
 
   // Reader ref for scrolling
   const readerContainerRef = useRef<HTMLDivElement>(null);
@@ -209,6 +221,30 @@ export const ContractDetails: React.FC = () => {
     (sec.sectionNumber && sec.sectionNumber.includes(outlineSearch))
   );
 
+  // Filter out children of collapsed sections
+  const visibleOutlineItems = (() => {
+    const items: typeof outlineItems = [];
+    let currentParentCollapsed = false;
+
+    for (let i = 0; i < outlineItems.length; i++) {
+      const sec = outlineItems[i];
+      if (sec.level === 1) {
+        currentParentCollapsed = !!collapsedSections[sec.id];
+        items.push(sec);
+      } else {
+        if (!currentParentCollapsed) {
+          items.push(sec);
+        }
+      }
+    }
+    return items;
+  })();
+
+  const hasSubsections = (index: number) => {
+    if (index === outlineItems.length - 1) return false;
+    return outlineItems[index + 1].level > 1;
+  };
+
   return (
     <PageContainer
       title="Contract Workspace"
@@ -261,10 +297,12 @@ export const ContractDetails: React.FC = () => {
 
             {/* Scrolling Outline List */}
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 font-medium">
-              {outlineItems.length === 0 ? (
+              {visibleOutlineItems.length === 0 ? (
                 <p className="text-3xs text-slate-600 text-center py-4">No sections match query.</p>
               ) : (
-                outlineItems.map((sec) => {
+                visibleOutlineItems.map((sec) => {
+                  const isParent = sec.level === 1 && hasSubsections(outlineItems.indexOf(sec));
+                  const isCollapsed = !!collapsedSections[sec.id];
                   return (
                     <div 
                       key={sec.id}
@@ -272,15 +310,29 @@ export const ContractDetails: React.FC = () => {
                       className="group"
                     >
                       <div 
-                        onClick={() => scrollToSection(sec.id)}
-                        className={`flex items-start gap-1.5 rounded-lg px-2.5 py-1.5 text-3xs transition-all duration-150 cursor-pointer ${
+                        className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-3xs transition-all duration-150 ${
                           sec.level === 1 
                             ? 'text-slate-200 font-bold hover:bg-white/5' 
                             : 'text-slate-400 hover:bg-white/3 hover:text-white'
                         }`}
                       >
-                        <FileText size={10} className="shrink-0 mt-0.5 text-slate-500 group-hover:text-cyan-400" />
-                        <span className="truncate flex-1">
+                        {isParent ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSection(sec.id);
+                            }}
+                            className="p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer shrink-0"
+                          >
+                            {isCollapsed ? <ChevronRight size={10} /> : <ChevronDown size={10} />}
+                          </button>
+                        ) : (
+                          <FileText size={10} className="shrink-0 text-slate-500 group-hover:text-cyan-400" />
+                        )}
+                        <span 
+                          onClick={() => scrollToSection(sec.id)}
+                          className="truncate flex-1 cursor-pointer hover:underline"
+                        >
                           {sec.sectionNumber && `${sec.sectionNumber} `}{sec.title}
                         </span>
                       </div>
@@ -348,23 +400,42 @@ export const ContractDetails: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                sectionsList.map((sec) => (
-                  <div 
-                    id={`section-${sec.id}`} 
-                    key={sec.id} 
-                    className="group scroll-mt-6 p-2 rounded-xl transition-colors duration-300"
-                  >
-                    <h4 className={`font-heading font-bold tracking-tight select-none mb-1.5 ${
-                      sec.level === 1 ? 'text-xs text-primary font-extrabold border-b border-white/5 pb-1 mt-2' :
-                      sec.level === 2 ? 'text-[11px] text-cyan-400 font-semibold' : 'text-3xs text-slate-400'
-                    }`}>
-                      {sec.sectionNumber && `${sec.sectionNumber} `}{sec.title}
-                    </h4>
-                    <p className="pl-3 border-l border-white/5 text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">
-                      {sec.content}
-                    </p>
-                  </div>
-                ))
+                sectionsList.map((sec) => {
+                  const isCollapsed = !!collapsedReaderSections[sec.id];
+                  return (
+                    <div 
+                      id={`section-${sec.id}`} 
+                      key={sec.id} 
+                      className="group scroll-mt-6 p-2.5 rounded-xl transition-all duration-300 border border-transparent hover:border-white/5 bg-white/[0.01]"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <h4 
+                          onClick={() => toggleReaderSection(sec.id)}
+                          className={`font-heading font-bold tracking-tight select-none mb-1 cursor-pointer flex-1 flex items-center gap-2 ${
+                            sec.level === 1 ? 'text-xs text-primary font-extrabold border-b border-white/5 pb-1 mt-2' :
+                            sec.level === 2 ? 'text-[11px] text-cyan-400 font-semibold' : 'text-3xs text-slate-400'
+                          }`}
+                        >
+                          {sec.sectionNumber && `${sec.sectionNumber} `}{sec.title}
+                          {isCollapsed && (
+                            <span className="text-[9px] text-slate-500 font-mono font-normal tracking-wide bg-white/5 px-1.5 py-0.5 rounded uppercase">Collapsed</span>
+                          )}
+                        </h4>
+                        <button 
+                          onClick={() => toggleReaderSection(sec.id)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white px-2 py-1 text-3xs font-semibold cursor-pointer shrink-0"
+                        >
+                          {isCollapsed ? 'Expand Content' : 'Collapse Content'}
+                        </button>
+                      </div>
+                      {!isCollapsed && (
+                        <p className="pl-3 border-l border-white/5 text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap font-sans mt-2">
+                          {sec.content}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
 
