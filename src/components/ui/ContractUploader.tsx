@@ -1,9 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UploadCloud, FileText, CheckCircle2, AlertTriangle, Loader2, Sparkles, X } from 'lucide-react';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { doc, setDoc } from 'firebase/firestore';
-import { storage, db } from '../../firebase/config';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -67,75 +64,56 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
     setStep('uploading');
     setProgress(0);
 
-    const contractId = Math.random().toString(36).substring(2, 15);
-    const storagePath = `users/${currentUser.uid}/contracts/${contractId}/original-file`;
-    const storageRef = ref(storage, storagePath);
-
     try {
-      // 2. Upload to Firebase Storage
-      const metadata = {
-        contentType: file.type || (isPdfExtension ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
-        contentDisposition: `attachment; filename="${file.name}"`
-      };
-      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+      setStep('uploading');
+      setProgress(25);
 
-      await new Promise<void>((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          (snapshot) => {
-            const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-            setProgress(pct);
-          },
-          (error) => reject(error),
-          () => resolve()
-        );
+      // Convert file to Base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64Data = result.split(',')[1];
+          resolve(base64Data);
+        };
+        reader.onerror = (error) => reject(error);
       });
+      reader.readAsDataURL(file);
+      const fileBase64 = await base64Promise;
 
-      const downloadUrl = await getDownloadURL(storageRef);
-
-      // 3. Write initial Firestore Record
+      setProgress(50);
       setStep('parsing');
-      const contractDocRef = doc(db, 'contracts', contractId);
-      
-      const initialContractData = {
-        contractId,
-        userId: currentUser.uid,
-        contractName: file.name.replace(/\.[^/.]+$/, ""), // remove extension for UI display name
-        fileName: file.name,
-        fileType: file.type || (isPdfExtension ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
-        fileSize: file.size,
-        uploadDate: new Date().toISOString(),
-        storageUrl: downloadUrl,
-        status: 'uploaded',
-        pageCount: 0,
-        wordCount: 0,
-        contractCategory: 'Other',
-        parties: [],
-        effectiveDate: null,
-        expirationDate: null,
-        analysisStatus: 'analysis_pending'
-      };
 
-      await setDoc(contractDocRef, initialContractData);
-
-      // 4. Trigger Server Parsing
-      setStep('extracting');
       const idToken = await currentUser.getIdToken();
-      
-      const response = await fetch('http://localhost:5001/api/contracts/parse', {
+      const fileTypeVal = file.type || (isPdfExtension ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+
+      // 2. Upload and Parse directly on Backend (No Firebase Storage required)
+      const response = await fetch('http://localhost:5001/api/contracts/upload', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${idToken}`
         },
-        body: JSON.stringify({ contractId })
+        body: JSON.stringify({
+          fileName: file.name,
+          fileType: fileTypeVal,
+          fileSize: file.size,
+          fileBase64
+        })
       });
+
+      setProgress(75);
+      setStep('extracting');
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.error || 'Server failed to parse document structure.');
+        throw new Error(errData.error || 'Server failed to process and parse document.');
       }
 
+      const resData = await response.json();
+      const contractId = resData.contractId;
+
+      setProgress(100);
       setStep('completed');
       showToast('Contract ingested and parsed successfully!', 'success');
       
