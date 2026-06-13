@@ -6,7 +6,6 @@ import {
   GitCompare, 
   BarChart3, 
   Settings, 
-  Home, 
   Database,
   Sparkles
 } from 'lucide-react';
@@ -19,7 +18,6 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const menuItems = [
-    { name: 'Home Portal', path: '/', icon: <Home size={18} /> },
     { name: 'Command Center', path: '/dashboard', icon: <LayoutDashboard size={18} /> },
     { name: 'Contracts Vault', path: '/contracts', icon: <FileText size={18} /> },
     { name: 'Contract Comparator', path: '/comparison', icon: <GitCompare size={18} /> },
@@ -38,7 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className={`fixed top-0 bottom-0 left-0 z-50 flex w-64 flex-col border-r border-white/5 bg-[#0D0D15] px-4 py-5 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${
+      <aside className={`fixed top-0 bottom-0 left-0 z-50 flex h-screen w-64 flex-col border-r border-white/5 bg-[#0D0D15] px-4 py-5 transition-transform duration-300 ease-in-out lg:sticky lg:top-0 lg:translate-x-0 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         
