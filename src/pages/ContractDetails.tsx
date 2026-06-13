@@ -20,7 +20,7 @@ import {
 import { PageContainer } from '../components/layout/PageContainer';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { Contract } from '../types/contractTypes';
 
@@ -110,17 +110,14 @@ export const ContractDetails: React.FC = () => {
     if (!id || !currentUser) return;
     setIsDeleting(true);
     try {
-      const idToken = await currentUser.getIdToken();
-      const response = await fetch(`http://localhost:5001/api/contracts/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${idToken}`
-        }
-      });
+      // 1. Delete Firestore Document directly from client
+      const docRef = doc(db, 'contracts', id);
+      await deleteDoc(docRef);
 
-      if (!response.ok) {
-        throw new Error('Server repository deletion failure.');
-      }
+      // 2. Trigger local backend file deletion cleanup
+      await fetch(`http://localhost:5001/api/contracts/${currentUser.uid}/${id}`, {
+        method: 'DELETE'
+      });
 
       showToast('Document successfully purged.', 'success');
       navigate('/contracts');

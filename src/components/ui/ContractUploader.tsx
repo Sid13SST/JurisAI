@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UploadCloud, FileText, CheckCircle2, AlertTriangle, Loader2, Sparkles, X } from 'lucide-react';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -68,6 +70,8 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
       setStep('uploading');
       setProgress(25);
 
+      const contractId = Math.random().toString(36).substring(2, 15);
+
       // Convert file to Base64
       const reader = new FileReader();
       const base64Promise = new Promise<string>((resolve, reject) => {
@@ -84,17 +88,17 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
       setProgress(50);
       setStep('parsing');
 
-      const idToken = await currentUser.getIdToken();
       const fileTypeVal = file.type || (isPdfExtension ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
 
-      // 2. Upload and Parse directly on Backend (No Firebase Storage required)
-      const response = await fetch('http://localhost:5001/api/contracts/upload', {
+      // 2. Upload and Parse directly on local backend (requires no external GCP credentials)
+      const response = await fetch('http://localhost:5001/api/contracts/upload-and-parse', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          userId: currentUser.uid,
+          contractId,
           fileName: file.name,
           fileType: fileTypeVal,
           fileSize: file.size,
@@ -111,7 +115,33 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
       }
 
       const resData = await response.json();
-      const contractId = resData.contractId;
+
+      // 3. Write parsed contract record to Firestore from Client SDK (authenticated & free)
+      const downloadUrl = `http://localhost:5001/api/contracts/download/${currentUser.uid}/${contractId}?fileName=${encodeURIComponent(file.name)}&fileType=${encodeURIComponent(fileTypeVal)}`;
+      const contractDocRef = doc(db, 'contracts', contractId);
+
+      const contractData = {
+        contractId,
+        userId: currentUser.uid,
+        contractName: file.name.replace(/\.[^/.]+$/, ""), // remove extension for display name
+        fileName: file.name,
+        fileType: fileTypeVal,
+        fileSize: file.size,
+        uploadDate: new Date().toISOString(),
+        storageUrl: downloadUrl,
+        status: 'parsed',
+        pageCount: resData.pageCount,
+        wordCount: resData.wordCount,
+        contractCategory: resData.metadata.contractCategory,
+        parties: resData.metadata.parties,
+        effectiveDate: resData.metadata.effectiveDate,
+        expirationDate: resData.metadata.expirationDate,
+        rawText: resData.rawText,
+        structuredText: resData.structuredText,
+        analysisStatus: 'analysis_pending'
+      };
+
+      await setDoc(contractDocRef, contractData);
 
       setProgress(100);
       setStep('completed');
