@@ -1,0 +1,62 @@
+{
+  "Limitation of Liability": {
+    "marketValue": "12 Months Fees Paid",
+    "standardDescription": "Liability is capped at the fees paid or payable in the 12 months preceding the claim. Excludes indirect, consequential, or punitive damages."
+  },
+  "Termination": {
+    "marketValue": "30 Day Notice for Convenience",
+    "standardDescription": "Either party can terminate for convenience with 30 days written notice. Immediate termination for material breach if uncured within 30 days."
+  },
+  "Confidentiality": {
+    "marketValue": "Mutual Obligations",
+    "standardDescription": "Mutual obligations of confidentiality applying equally to both parties, with standard exceptions (public domain, prior knowledge, legal compulsion)."
+  },
+  "Intellectual Property": {
+    "marketValue": "Retained By Creator Unless Assigned",
+    "standardDescription": "Each party retains ownership of its background intellectual property. Developed IP/deliverables assigned to customer upon full payment."
+  },
+  "Force Majeure": {
+    "marketValue": "Mutual Excused Performance",
+    "standardDescription": "Excuses performance for standard events beyond reasonable control (natural disasters, acts of God, war). Requires immediate notice and mitigation."
+  },
+  "Data Protection": {
+    "marketValue": "Standard GDPR/CCPA Compliance",
+    "standardDescription": "Commitment to comply with applicable data protection laws (GDPR, CCPA), including security measures, data breach notification within 72 hours, and data return/destruction."
+  },
+  "Indemnity": {
+    "marketValue": "Mutual or Balanced IP/Third-Party Indemnity",
+    "standardDescription": "Provider indemnifies customer for third-party intellectual property claims. Customer indemnifies provider for claims arising from unauthorized use."
+  },
+  "Governing Law": {
+    "marketValue": "Neutral or Mutual Jurisdiction",
+    "standardDescription": "Governing law of a major neutral jurisdiction (e.g., Delaware, New York, or the state where the defendant is located) without regard to conflicts of law."
+  },
+  "Payment Terms": {
+    "marketValue": "Net 30 Days",
+    "standardDescription": "Payment due within 30 days of invoice receipt. Disputed amounts may be withheld in good faith, and interest on late payments capped at a reasonable rate (e.g., 1-1.5% per month)."
+  },
+  "Dispute Resolution": {
+    "marketValue": "Escalation to Arbitration/Mediation",
+    "standardDescription": "Escalation process starting with executive negotiations, followed by mediation, and final binding arbitration under AAA or JAMS rules."
+  },
+  "Non-Compete": {
+    "marketValue": "Restricted Duration (12 Months Max)",
+    "standardDescription": "Non-compete obligations limited in scope, geography, and duration (maximum of 12 months post-termination) to protect legitimate business interests."
+  },
+  "Assignment": {
+    "marketValue": "Consent Required (Not Unreasonably Withheld)",
+    "standardDescription": "Neither party may assign the contract without the other party's written consent, except in connection with a merger, acquisition, or sale of all or substantially all assets."
+  },
+  "Warranty": {
+    "marketValue": "Standard Professional Services Warranty",
+    "standardDescription": "Services performed in a professional, workmanlike manner conforming to industry standards and specifications. Reperformance as sole remedy within 90 days."
+  },
+  "Audit Rights": {
+    "marketValue": "Reasonable Notice (Annual Limit)",
+    "standardDescription": "Audit permitted once per year during business hours with at least 15 business days' notice. Auditor must sign a confidentiality agreement, and cost is borne by auditor unless a material discrepancy is found."
+  },
+  "Insurance": {
+    "marketValue": "Standard Commercial Limits",
+    "standardDescription": "Maintain standard insurance policies: Commercial General Liability ($1M/$2M), Professional Liability/Errors & Omissions ($1M-$2M), and Worker's Compensation."
+  }
+}
