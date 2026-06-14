@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import contractRoutes from './routes/contractRoutes';
 import aiRoutes from './routes/aiRoutes';
+import riskRoutes from './routes/riskRoutes';
 
 // Initialize env config
 dotenv.config();
@@ -34,6 +35,7 @@ app.get('/health', (req, res) => {
 // App Router bindings
 app.use('/api/contracts', contractRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/ai', riskRoutes);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
