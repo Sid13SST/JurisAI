@@ -199,3 +199,85 @@ export async function deleteFirestoreDoc(
     throw new Error(`Firestore REST DELETE failed for ${collection}/${docId}: ${response.status} ${response.statusText} - ${errorText}`);
   }
 }
+
+/**
+ * Queries a collection in Firestore for documents matching a specific field value using the client's ID Token
+ */
+export async function queryFirestoreCollection(
+  collection: string,
+  filterField: string,
+  filterValue: string,
+  idToken: string,
+  additionalFilter?: { field: string; value: string }
+): Promise<any[]> {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery`;
+
+  let whereClause: any;
+
+  if (additionalFilter) {
+    // Composite AND filter (needed for Firestore security rules requiring userId in query)
+    whereClause = {
+      compositeFilter: {
+        op: 'AND',
+        filters: [
+          {
+            fieldFilter: {
+              field: { fieldPath: filterField },
+              op: 'EQUAL',
+              value: { stringValue: filterValue }
+            }
+          },
+          {
+            fieldFilter: {
+              field: { fieldPath: additionalFilter.field },
+              op: 'EQUAL',
+              value: { stringValue: additionalFilter.value }
+            }
+          }
+        ]
+      }
+    };
+  } else {
+    whereClause = {
+      fieldFilter: {
+        field: { fieldPath: filterField },
+        op: 'EQUAL',
+        value: { stringValue: filterValue }
+      }
+    };
+  }
+
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId: collection }],
+      where: whereClause
+    }
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${idToken}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Firestore REST runQuery failed for ${collection} filter ${filterField}=${filterValue}: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const resData = await response.json();
+  
+  if (!Array.isArray(resData)) return [];
+
+  const results: any[] = [];
+  for (const item of resData) {
+    if (item.document && item.document.fields) {
+      results.push(fromFirestoreFields(item.document.fields));
+    }
+  }
+
+  return results;
+}
