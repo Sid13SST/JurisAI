@@ -32,4 +32,52 @@ export interface Contract {
   missingClauses?: string[];
   averageConfidence?: number;
   clauseCount?: number;
+  riskAnalysisStatus?: 'idle' | 'analyzing' | 'completed' | 'failed';
+  overallRiskScore?: number;
+  riskLevel?: 'Very Low' | 'Low' | 'Moderate' | 'High' | 'Critical';
+}
+
+export interface MarketComparison {
+  contractValue: string;
+  marketValue: string;
+  classification: 'Favourable' | 'Neutral' | 'Unfavourable' | 'Unusual';
+}
+
+export interface ClauseRisk {
+  clauseId: string;
+  contractId: string;
+  userId: string;
+  clauseType: string;
+  riskScore: number;
+  riskCategory: 'Financial' | 'Legal' | 'Operational' | 'Reputational';
+  riskLevel: 'Very Low' | 'Low' | 'Moderate' | 'High' | 'Critical';
+  reasoning: string;
+  whyFlagged: string;
+  potentialImpact: string;
+  recommendedAction: string;
+  priority: 'Low Priority' | 'Medium Priority' | 'High Priority' | 'Immediate Review';
+  marketComparison: MarketComparison;
+  createdAt: string;
+}
+
+export interface TopIssue {
+  title: string;
+  description: string;
+  severity: 'Low' | 'Medium' | 'High' | 'Critical';
+}
+
+export interface RiskAnalysis {
+  analysisId: string;
+  contractId: string;
+  userId: string;
+  overallRiskScore: number;
+  riskLevel: 'Very Low' | 'Low' | 'Moderate' | 'High' | 'Critical';
+  topIssues: TopIssue[];
+  riskBreakdown: {
+    Financial: number;
+    Legal: number;
+    Operational: number;
+    Reputational: number;
+  };
+  createdAt: string;
 }
