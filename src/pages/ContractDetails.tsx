@@ -25,6 +25,7 @@ import {
   Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import { PageContainer } from '../components/layout/PageContainer';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -85,8 +86,8 @@ export const ContractDetails: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
-  // Tab: 'viewer' | 'ai'
-  const [activeTab, setActiveTab] = useState<'viewer' | 'ai'>('viewer');
+  // Tab: 'viewer' | 'ai' | 'risk'
+  const [activeTab, setActiveTab] = useState<'viewer' | 'ai' | 'risk'>('viewer');
 
   // Outline/TOC filtering
   const [outlineSearch, setOutlineSearch] = useState('');
@@ -106,6 +107,20 @@ export const ContractDetails: React.FC = () => {
 
   // Clauses list synced from Firestore
   const [clauses, setClauses] = useState<ClauseDoc[]>([]);
+
+  // Risk Analysis and Clause Risk synced from Firestore
+  const [riskAnalysis, setRiskAnalysis] = useState<any | null>(null);
+  const [clauseRisks, setClauseRisks] = useState<any[]>([]);
+  const [isAnalyzingRisk, setIsAnalyzingRisk] = useState(false);
+  const [riskAnalysisError, setRiskAnalysisError] = useState<string | null>(null);
+
+  // Filters for Risk and Compliance Tab
+  const [riskSearch, setRiskSearch] = useState('');
+  const [filterRiskLevel, setFilterRiskLevel] = useState('all');
+  const [filterRiskCategory, setFilterRiskCategory] = useState('all');
+  const [filterClauseTypeRisk, setFilterClauseTypeRisk] = useState('all');
+  const [filterReviewPriority, setFilterReviewPriority] = useState('all');
+  const [expandedRiskClauses, setExpandedRiskClauses] = useState<Record<string, boolean>>({});
 
   // Clause Workspace Search/Filter States
   const [clauseSearch, setClauseSearch] = useState('');
@@ -179,6 +194,46 @@ export const ContractDetails: React.FC = () => {
       setClauses(clausesList);
     }, (err) => {
       console.error('Error fetching clauses:', err);
+    });
+
+    return unsubscribe;
+  }, [id, currentUser]);
+
+  // Sync Risk Analysis
+  useEffect(() => {
+    if (!id || !currentUser) return;
+
+    const docRef = doc(db, 'riskAnalysis', id);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setRiskAnalysis(docSnap.data());
+      } else {
+        setRiskAnalysis(null);
+      }
+    }, (err) => {
+      console.error('Error loading risk analysis:', err);
+    });
+
+    return unsubscribe;
+  }, [id, currentUser]);
+
+  // Sync Clause Risks
+  useEffect(() => {
+    if (!id || !currentUser) return;
+
+    const q = query(
+      collection(db, 'clauseRisk'),
+      where('contractId', '==', id)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const risksList: any[] = [];
+      snapshot.forEach((doc) => {
+        risksList.push(doc.data());
+      });
+      setClauseRisks(risksList);
+    }, (err) => {
+      console.error('Error loading clause risks:', err);
     });
 
     return unsubscribe;
@@ -513,6 +568,78 @@ export const ContractDetails: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
+  const runRiskAnalysis = async () => {
+    if (!contract || !currentUser) return;
+    setIsAnalyzingRisk(true);
+    setRiskAnalysisError(null);
+    try {
+      const idToken = await currentUser.getIdToken();
+      const response = await fetch('http://localhost:5001/api/ai/analyze-risk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ contractId: contract.contractId })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Risk analysis calculation failed.');
+      }
+
+      showToast('Risk analysis completed successfully.', 'success');
+    } catch (err: any) {
+      console.error('Risk analysis failed:', err);
+      setRiskAnalysisError(err.message || 'Risk analysis failed.');
+      showToast(`Risk analysis failed: ${err.message}`, 'error');
+    } finally {
+      setIsAnalyzingRisk(false);
+    }
+  };
+
+  const getSectionPageNumber = (sectionId: string): number => {
+    if (!contract || !contract.structuredText || contract.structuredText.length === 0) return 1;
+    const sections = contract.structuredText;
+    let totalLength = 0;
+    let sectionOffset = 0;
+    let found = false;
+
+    for (const sec of sections) {
+      if (sec.id === sectionId) {
+        sectionOffset = totalLength;
+        found = true;
+      }
+      totalLength += (sec.content || '').length;
+    }
+
+    if (!found || totalLength === 0) return 1;
+    const estimatedPage = Math.floor((sectionOffset / totalLength) * (contract.pageCount || 1)) + 1;
+    return Math.min(estimatedPage, contract.pageCount || 1);
+  };
+
+  const getClausePageNumber = (clause: any): number => {
+    if (!contract || !contract.structuredText) return 1;
+    
+    let match = null;
+    if (clause.sectionNumber) {
+      match = contract.structuredText.find(
+        s => s.sectionNumber?.trim() === clause.sectionNumber.trim()
+      );
+    }
+    if (!match && clause.sectionTitle) {
+      const normTitle = clause.sectionTitle.toLowerCase().trim();
+      match = contract.structuredText.find(
+        s => s.title.toLowerCase().trim().includes(normTitle) || normTitle.includes(s.title.toLowerCase().trim())
+      );
+    }
+
+    if (match) {
+      return getSectionPageNumber(match.id);
+    }
+    return 1;
+  };
+
   const getConfidenceColor = (score: number) => {
     if (score >= 90) return 'text-green-400 bg-green-500/10 border-green-500/20';
     if (score >= 70) return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
@@ -679,6 +806,28 @@ export const ContractDetails: React.FC = () => {
           )}
           {activeTab === 'ai' && (
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-cyan-500 to-primary" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('risk')}
+          className={`relative py-3 px-6 text-2xs font-extrabold tracking-wider uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'risk' ? 'text-red-400 text-glow' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <ShieldAlert size={12} className={contract.riskAnalysisStatus === 'completed' ? 'text-red-400' : 'text-slate-500'} />
+          <span>Risk & Compliance</span>
+          {contract.riskAnalysisStatus === 'completed' && contract.overallRiskScore !== undefined && (
+            <span className={`ml-1 px-1.5 py-0.5 text-[8px] border font-extrabold rounded-md uppercase tracking-wide ${
+              contract.overallRiskScore >= 80 ? 'bg-red-500/10 border-red-500/20 text-red-400' :
+              contract.overallRiskScore >= 60 ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' :
+              contract.overallRiskScore >= 40 ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400' :
+              'bg-green-500/10 border-green-500/20 text-green-400'
+            }`}>
+              Score: {contract.overallRiskScore}
+            </span>
+          )}
+          {activeTab === 'risk' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-red-500 to-orange-500" />
           )}
         </button>
       </div>
@@ -1220,6 +1369,530 @@ export const ContractDetails: React.FC = () => {
 
                 </motion.div>
               )}
+
+              {activeTab === 'risk' && (
+                <motion.div
+                  key="risk-tab"
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="flex flex-col h-full overflow-hidden"
+                >
+                  {/* CASE 1: Risk Analysis not started or failed */}
+                  {(!contract.riskAnalysisStatus || contract.riskAnalysisStatus === 'idle') && !isAnalyzingRisk && (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-6">
+                      <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-red-500/10 blur-xl animate-pulse" />
+                        <div className="relative h-16 w-16 rounded-2xl border border-red-500/20 bg-red-500/5 flex items-center justify-center text-red-400 shadow-lg shadow-red-500/5">
+                          <ShieldAlert size={32} className="animate-pulse" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 max-w-sm">
+                        <h3 className="font-heading font-extrabold text-sm uppercase tracking-wider text-slate-100">
+                          Initialize Risk Engine
+                        </h3>
+                        <p className="text-2xs text-slate-400 leading-relaxed">
+                          Analyze extracted contract clauses against market standard baselines to identify deviations, calculate risk scores, and highlight key issues.
+                        </p>
+                      </div>
+
+                      {clauses.length === 0 ? (
+                        <div className="rounded-xl border border-amber-500/10 bg-amber-500/3 p-3 max-w-sm text-3xs text-amber-400 flex items-start gap-2">
+                          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                          <span>No extracted clauses found. You must run AI Clause Extraction first in the Clause Workspace tab before performing risk analysis.</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={runRiskAnalysis}
+                          className="rounded-xl bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 px-6 py-2.5 text-2xs font-bold text-white shadow-lg shadow-red-500/10 hover:shadow-red-500/20 transition-all flex items-center gap-2 cursor-pointer uppercase tracking-wider animate-glow"
+                        >
+                          <Play size={10} />
+                          <span>Analyze Contract Risk</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CASE 2: Risk analysis is loading */}
+                  {isAnalyzingRisk && (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-6">
+                      <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-red-500/10 blur-xl animate-pulse" />
+                        <div className="relative h-16 w-16 rounded-2xl border border-red-500/20 bg-red-500/5 flex items-center justify-center text-red-400 animate-spin">
+                          <RefreshCw size={24} />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 max-w-sm">
+                        <h3 className="font-heading font-extrabold text-sm uppercase tracking-wider text-slate-100 animate-pulse">
+                          Analyzing Clauses...
+                        </h3>
+                        <p className="text-2xs text-slate-400 leading-relaxed">
+                          Evaluating legal, financial, operational, and reputational risk parameters. Comparing draft text against market standards.
+                        </p>
+                      </div>
+
+                      {/* Animated glass loading progress bar */}
+                      <div className="w-64 h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5 relative">
+                        <div className="h-full bg-gradient-to-r from-red-500 to-orange-500 rounded-full animate-[loading_1.5s_infinite_linear]" style={{ width: '50%' }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CASE 3: Risk analysis failed */}
+                  {contract.riskAnalysisStatus === 'failed' && !isAnalyzingRisk && (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-6">
+                      <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-red-500/10 blur-xl animate-pulse" />
+                        <div className="relative h-16 w-16 rounded-2xl border border-red-500/20 bg-red-500/5 flex items-center justify-center text-red-400 shadow-lg shadow-red-500/5">
+                          <AlertCircle size={32} />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 max-w-sm">
+                        <h3 className="font-heading font-extrabold text-sm uppercase tracking-wider text-red-400">
+                          Risk Engine Interrupted
+                        </h3>
+                        <p className="text-2xs text-slate-400 leading-relaxed">
+                          {riskAnalysisError || 'The AI service encountered an error while analyzing clause risks.'}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={runRiskAnalysis}
+                        className="rounded-xl bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 px-6 py-2.5 text-2xs font-bold text-white shadow-lg shadow-red-500/10 hover:shadow-red-500/20 transition-all flex items-center gap-2 cursor-pointer uppercase tracking-wider"
+                      >
+                        <RefreshCw size={10} />
+                        <span>Retry Risk Analysis</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* CASE 4: Completed risk analysis dashboard */}
+                  {contract.riskAnalysisStatus === 'completed' && riskAnalysis && !isAnalyzingRisk && (
+                    <div className="flex-1 flex flex-col h-full overflow-hidden">
+                      
+                      {/* Dashboard overview: overall score + categories bar chart + top issues */}
+                      <div className="shrink-0 overflow-y-auto max-h-[300px] border-b border-white/5 pb-4 mb-4 space-y-4 pr-1 scrollbar-thin">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+                          
+                          {/* Radial / Ring gauge overall score */}
+                          <div className="rounded-2xl border border-white/5 bg-black/20 p-4 flex flex-col items-center justify-center relative overflow-hidden glass-panel">
+                            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.01] to-transparent pointer-events-none" />
+                            <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider mb-2">Overall Contract Risk</span>
+                            
+                            <div className="relative flex items-center justify-center h-24 w-24">
+                              {/* Simple SVG progress circle */}
+                              <svg className="w-full h-full transform -rotate-90">
+                                <circle
+                                  cx="48"
+                                  cy="48"
+                                  r="40"
+                                  stroke="rgba(255,255,255,0.03)"
+                                  strokeWidth="7"
+                                  fill="transparent"
+                                />
+                                <circle
+                                  cx="48"
+                                  cy="48"
+                                  r="40"
+                                  stroke={
+                                    riskAnalysis.overallRiskScore >= 81 ? '#ef4444' :
+                                    riskAnalysis.overallRiskScore >= 61 ? '#f97316' :
+                                    riskAnalysis.overallRiskScore >= 41 ? '#eab308' :
+                                    riskAnalysis.overallRiskScore >= 21 ? '#06b6d4' : '#10b981'
+                                  }
+                                  strokeWidth="7"
+                                  fill="transparent"
+                                  strokeDasharray={`${2 * Math.PI * 40}`}
+                                  strokeDashoffset={`${2 * Math.PI * 40 * (1 - riskAnalysis.overallRiskScore / 100)}`}
+                                  className="transition-all duration-1000 ease-out"
+                                />
+                              </svg>
+                              <div className="absolute flex flex-col items-center justify-center">
+                                <span className="text-xl font-extrabold font-mono text-slate-100">{riskAnalysis.overallRiskScore}</span>
+                                <span className="text-[8px] text-slate-500 font-mono font-bold uppercase">/ 100</span>
+                              </div>
+                            </div>
+
+                            <span className={`mt-2 text-2xs font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
+                              riskAnalysis.overallRiskScore >= 81 ? 'text-red-400 border-red-500/20 bg-red-500/5' :
+                              riskAnalysis.overallRiskScore >= 61 ? 'text-orange-400 border-orange-500/20 bg-orange-500/5' :
+                              riskAnalysis.overallRiskScore >= 41 ? 'text-yellow-400 border-yellow-500/20 bg-yellow-500/5' :
+                              riskAnalysis.overallRiskScore >= 21 ? 'text-cyan-400 border-cyan-500/20 bg-cyan-500/5' :
+                              'text-green-400 border-green-500/20 bg-green-500/5'
+                            }`}>
+                              {riskAnalysis.riskLevel} Risk
+                            </span>
+                          </div>
+
+                          {/* Categories risk chart */}
+                          <div className="rounded-2xl border border-white/5 bg-black/20 p-4 flex flex-col glass-panel col-span-1 md:col-span-2">
+                            <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider mb-2">Risk Breakdown by Category</span>
+                            <div className="h-28 w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart
+                                  data={[
+                                    { name: 'Financial', score: riskAnalysis.riskBreakdown?.Financial || 0 },
+                                    { name: 'Legal', score: riskAnalysis.riskBreakdown?.Legal || 0 },
+                                    { name: 'Operational', score: riskAnalysis.riskBreakdown?.Operational || 0 },
+                                    { name: 'Reputational', score: riskAnalysis.riskBreakdown?.Reputational || 0 }
+                                  ]}
+                                  margin={{ top: 5, right: 10, left: -25, bottom: 5 }}
+                                >
+                                  <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
+                                  <YAxis stroke="#64748b" fontSize={9} domain={[0, 100]} tickLine={false} axisLine={false} />
+                                  <Tooltip
+                                    cursor={{ fill: 'rgba(255,255,255,0.02)' }}
+                                    contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '9px', textAlign: 'left' }}
+                                  />
+                                  <Bar dataKey="score" radius={[4, 4, 0, 0]} barSize={28}>
+                                    {
+                                      [
+                                        riskAnalysis.riskBreakdown?.Financial || 0,
+                                        riskAnalysis.riskBreakdown?.Legal || 0,
+                                        riskAnalysis.riskBreakdown?.Operational || 0,
+                                        riskAnalysis.riskBreakdown?.Reputational || 0
+                                      ].map((val, idx) => (
+                                        <Cell
+                                          key={`cell-${idx}`}
+                                          fill={
+                                            val >= 81 ? '#ef4444' :
+                                            val >= 61 ? '#f97316' :
+                                            val >= 41 ? '#eab308' :
+                                            val >= 21 ? '#06b6d4' : '#10b981'
+                                          }
+                                        />
+                                      ))
+                                    }
+                                  </Bar>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+
+                          {/* Top 3 Issues warnings box */}
+                          <div className="rounded-2xl border border-white/5 bg-black/20 p-4 col-span-1 md:col-span-3 glass-panel">
+                            <div className="flex items-center gap-1.5 border-b border-white/5 pb-2 mb-2.5">
+                              <ShieldAlert size={12} className="text-red-400" />
+                              <span className="text-[9px] font-extrabold text-slate-200 uppercase tracking-wider">Top Negotiation Issues</span>
+                            </div>
+
+                            <div className="space-y-2 text-left">
+                              {riskAnalysis.topIssues?.map((issue: any, index: number) => (
+                                <div key={index} className="flex gap-2.5 p-2 rounded-xl bg-white/[0.01] border border-white/3 items-start">
+                                  <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                                    issue.severity === 'Critical' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                    issue.severity === 'High' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+                                    issue.severity === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                                    'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                                  }`}>
+                                    {index + 1}
+                                  </span>
+                                  <div className="space-y-0.5 text-2xs">
+                                    <div className="flex items-center gap-1.5 font-bold text-slate-200">
+                                      <span>{issue.title}</span>
+                                      <span className={`px-1 rounded-[4px] text-[8px] font-extrabold uppercase ${
+                                        issue.severity === 'Critical' ? 'bg-red-500/10 text-red-400 border border-red-500/10' :
+                                        issue.severity === 'High' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/10' :
+                                        issue.severity === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/10' :
+                                        'bg-cyan-500/10 text-cyan-400 border border-cyan-500/10'
+                                      }`}>
+                                        {issue.severity}
+                                      </span>
+                                    </div>
+                                    <p className="text-slate-400 leading-normal">{issue.description}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                        </div>
+                      </div>
+
+                      {/* Filters Toolbar */}
+                      <div className="shrink-0 bg-black/10 border border-white/5 rounded-2xl p-3 mb-4 flex flex-col md:flex-row gap-2.5 items-center justify-between text-2xs">
+                        <div className="relative w-full md:w-56">
+                          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                          <input
+                            type="text"
+                            placeholder="Search risk explanations..."
+                            value={riskSearch}
+                            onChange={(e) => setRiskSearch(e.target.value)}
+                            className="w-full rounded-xl border border-white/5 bg-black/20 py-1.5 pl-8 pr-2.5 text-3xs text-slate-300 outline-none placeholder:text-slate-600 focus:border-cyan-500/40"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+                          <select
+                            value={filterRiskLevel}
+                            onChange={(e) => setFilterRiskLevel(e.target.value)}
+                            className="rounded-xl border border-white/5 bg-black/20 py-1.5 px-2.5 text-[10px] text-slate-300 outline-none"
+                          >
+                            <option value="all">All Risk Levels</option>
+                            <option value="Critical">Critical</option>
+                            <option value="High">High</option>
+                            <option value="Moderate">Moderate</option>
+                            <option value="Low">Low</option>
+                            <option value="Very Low">Very Low</option>
+                          </select>
+
+                          <select
+                            value={filterRiskCategory}
+                            onChange={(e) => setFilterRiskCategory(e.target.value)}
+                            className="rounded-xl border border-white/5 bg-black/20 py-1.5 px-2.5 text-[10px] text-slate-300 outline-none"
+                          >
+                            <option value="all">All Categories</option>
+                            <option value="Financial">Financial</option>
+                            <option value="Legal">Legal</option>
+                            <option value="Operational">Operational</option>
+                            <option value="Reputational">Reputational</option>
+                          </select>
+
+                          <select
+                            value={filterClauseTypeRisk}
+                            onChange={(e) => setFilterClauseTypeRisk(e.target.value)}
+                            className="rounded-xl border border-white/5 bg-black/20 py-1.5 px-2.5 text-[10px] text-slate-300 outline-none"
+                          >
+                            <option value="all">All Clause Types</option>
+                            {REQUIRED_CLAUSE_TYPES.map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={filterReviewPriority}
+                            onChange={(e) => setFilterReviewPriority(e.target.value)}
+                            className="rounded-xl border border-white/5 bg-black/20 py-1.5 px-2.5 text-[10px] text-slate-300 outline-none"
+                          >
+                            <option value="all">All Priorities</option>
+                            <option value="Immediate Review">Immediate Review</option>
+                            <option value="High Priority">High Priority</option>
+                            <option value="Medium Priority">Medium Priority</option>
+                            <option value="Low Priority">Low Priority</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Accordion review list */}
+                      <div className="flex-1 overflow-y-auto space-y-3.5 pr-2.5 scrollbar-thin">
+                        {(() => {
+                          const filteredRisks = clauseRisks.filter(r => {
+                            const cl = clauses.find(c => c.clauseId === r.clauseId);
+                            const textToSearch = `${r.clauseType} ${r.reasoning} ${r.whyFlagged} ${r.potentialImpact} ${r.recommendedAction} ${cl?.summary || ''} ${cl?.fullText || ''}`.toLowerCase();
+                            
+                            const matchesSearch = riskSearch ? textToSearch.includes(riskSearch.toLowerCase()) : true;
+                            const matchesLevel = filterRiskLevel === 'all' ? true : r.riskLevel === filterRiskLevel;
+                            const matchesCategory = filterRiskCategory === 'all' ? true : r.riskCategory === filterRiskCategory;
+                            const matchesPriority = filterReviewPriority === 'all' ? true : r.priority === filterReviewPriority;
+                            const matchesClauseType = filterClauseTypeRisk === 'all' ? true : r.clauseType === filterClauseTypeRisk;
+
+                            return matchesSearch && matchesLevel && matchesCategory && matchesPriority && matchesClauseType;
+                          });
+
+                          if (filteredRisks.length === 0) {
+                            return (
+                              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-2 border border-dashed border-white/5 rounded-2xl bg-white/[0.01]">
+                                <AlertTriangle size={18} className="text-slate-500" />
+                                <span className="text-2xs text-slate-400">No risk results match your active filters.</span>
+                              </div>
+                            );
+                          }
+
+                          return filteredRisks.map(r => {
+                            const isExpanded = !!expandedRiskClauses[r.clauseId];
+                            const cl = clauses.find(c => c.clauseId === r.clauseId);
+
+                            return (
+                              <div
+                                key={r.clauseId}
+                                className={`rounded-2xl border transition-all duration-300 overflow-hidden ${
+                                  isExpanded ? 'border-red-500/20 bg-red-500/[0.01]' : 'border-white/5 bg-[#111827]/10 hover:border-white/10 hover:bg-[#111827]/20'
+                                }`}
+                              >
+                                {/* Accordion Header */}
+                                <div
+                                  onClick={() => setExpandedRiskClauses(prev => ({ ...prev, [r.clauseId]: !prev[r.clauseId] }))}
+                                  className="p-3.5 flex items-center justify-between gap-4 cursor-pointer select-none"
+                                >
+                                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                    <span className="font-heading font-extrabold text-xs text-slate-200 truncate">{r.clauseType}</span>
+                                    
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className={`text-[8px] px-1.5 py-0.5 rounded-[4px] font-extrabold font-mono ${
+                                        r.riskScore >= 81 ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                        r.riskScore >= 61 ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+                                        r.riskScore >= 41 ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
+                                        r.riskScore >= 21 ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
+                                        'bg-green-500/10 text-green-400 border border-green-500/20'
+                                      }`}>
+                                        Score: {r.riskScore}
+                                      </span>
+
+                                      <span className={`text-[8px] px-1.5 py-0.5 rounded-[4px] font-bold uppercase ${
+                                        r.riskCategory === 'Financial' ? 'bg-red-500/5 text-red-300 border border-red-500/10' :
+                                        r.riskCategory === 'Legal' ? 'bg-cyan-500/5 text-cyan-300 border border-cyan-500/10' :
+                                        r.riskCategory === 'Operational' ? 'bg-orange-500/5 text-orange-300 border border-orange-500/10' :
+                                        'bg-purple-500/5 text-purple-300 border border-purple-500/10'
+                                      }`}>
+                                        {r.riskCategory} Risk
+                                      </span>
+
+                                      <span className={`text-[8px] px-1.5 py-0.5 rounded-[4px] font-bold uppercase border ${
+                                        r.marketComparison?.classification === 'Unfavourable' ? 'border-red-500/20 bg-red-500/5 text-red-400' :
+                                        r.marketComparison?.classification === 'Unusual' ? 'border-purple-500/20 bg-purple-500/5 text-purple-400' :
+                                        r.marketComparison?.classification === 'Favourable' ? 'border-green-500/20 bg-green-500/5 text-green-400' :
+                                        'border-slate-500/20 bg-slate-500/5 text-slate-400'
+                                      }`}>
+                                        {r.marketComparison?.classification}
+                                      </span>
+
+                                      <span className={`text-[8px] px-1.5 py-0.5 rounded-[4px] font-bold uppercase border ${
+                                        r.priority === 'Immediate Review' ? 'border-red-500/30 bg-red-500/10 text-red-400 animate-pulse' :
+                                        r.priority === 'High Priority' ? 'border-orange-500/20 bg-orange-500/5 text-orange-400' :
+                                        r.priority === 'Medium Priority' ? 'border-yellow-500/20 bg-yellow-500/5 text-yellow-400' :
+                                        'border-slate-500/20 bg-slate-500/5 text-slate-400'
+                                      }`}>
+                                        {r.priority}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="text-slate-500">
+                                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                  </div>
+                                </div>
+
+                                {/* Accordion Body */}
+                                <AnimatePresence>
+                                  {isExpanded && (
+                                    <motion.div
+                                      initial={{ height: 0 }}
+                                      animate={{ height: 'auto' }}
+                                      exit={{ height: 0 }}
+                                      transition={{ duration: 0.2 }}
+                                      className="border-t border-white/5 overflow-hidden"
+                                    >
+                                      <div className="p-4 space-y-4 text-3xs leading-relaxed text-left">
+                                        
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                          
+                                          {/* Left Column: Text excerpts and baseline */}
+                                          <div className="space-y-4">
+                                            {/* Original text verbatim */}
+                                            {cl && (
+                                              <div className="space-y-1">
+                                                <div className="flex justify-between items-center">
+                                                  <span className="block font-bold text-slate-500 uppercase tracking-wide text-[9px]">Original Clause Excerpt</span>
+                                                  <button 
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      navigator.clipboard.writeText(cl.fullText);
+                                                      showToast('Clause text copied to clipboard.', 'success');
+                                                    }}
+                                                    className="text-slate-500 hover:text-white transition-colors p-1 cursor-pointer"
+                                                  >
+                                                    <Copy size={10} />
+                                                  </button>
+                                                </div>
+                                                <pre className="font-mono text-slate-400 bg-black/40 border border-white/3 rounded-lg p-3 whitespace-pre-wrap leading-relaxed max-h-[160px] overflow-y-auto select-text">
+                                                  {cl.fullText}
+                                                </pre>
+                                              </div>
+                                            )}
+
+                                            {/* Summary summary */}
+                                            {cl && (
+                                              <div className="space-y-1">
+                                                <span className="block font-bold text-slate-500 uppercase tracking-wide text-[9px]">Summary Description</span>
+                                                <p className="text-slate-300 leading-normal font-sans bg-white/[0.01] border border-white/3 rounded-lg p-2.5">
+                                                  {cl.summary}
+                                                </p>
+                                              </div>
+                                            )}
+
+                                            {/* Market standard comparison values */}
+                                            <div className="space-y-2 rounded-xl bg-black/20 border border-white/3 p-3 text-2xs space-y-2">
+                                              <span className="block font-extrabold text-slate-400 uppercase tracking-wider text-[8px] border-b border-white/5 pb-1">Market Standard Comparison</span>
+                                              
+                                              <div className="grid grid-cols-2 gap-2 mt-1.5">
+                                                <div className="space-y-0.5">
+                                                  <span className="text-slate-500 text-[9px] block">Draft Contract Value</span>
+                                                  <span className="font-bold text-slate-300">{r.marketComparison?.contractValue}</span>
+                                                </div>
+                                                <div className="space-y-0.5">
+                                                  <span className="text-slate-500 text-[9px] block">Market Benchmark Expectation</span>
+                                                  <span className="font-bold text-slate-300">{r.marketComparison?.marketValue}</span>
+                                                </div>
+                                              </div>
+                                            </div>
+
+                                          </div>
+
+                                          {/* Right Column: AI Reasoning Panel */}
+                                          <div className="space-y-4">
+                                            
+                                            <div className="rounded-2xl border border-red-500/10 bg-red-500/[0.02] p-4 space-y-3 relative overflow-hidden">
+                                              <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/[0.01] rounded-full blur-xl pointer-events-none" />
+                                              <div className="flex items-center gap-1.5 text-red-400">
+                                                <ShieldAlert size={12} className="animate-pulse" />
+                                                <span className="font-heading font-extrabold text-[9px] uppercase tracking-wider">AI Reasoning Panel</span>
+                                              </div>
+
+                                              <div className="space-y-2.5">
+                                                <div className="space-y-0.5">
+                                                  <span className="text-slate-500 font-bold uppercase tracking-wider text-[8px]">Why Flagged</span>
+                                                  <p className="text-slate-300 font-sans leading-normal">{r.whyFlagged}</p>
+                                                </div>
+
+                                                <div className="space-y-0.5">
+                                                  <span className="text-slate-500 font-bold uppercase tracking-wider text-[8px]">Potential Risk Impact</span>
+                                                  <p className="text-slate-300 font-sans leading-normal">{r.potentialImpact}</p>
+                                                </div>
+
+                                                <div className="space-y-0.5">
+                                                  <span className="text-slate-500 font-bold uppercase tracking-wider text-[8px]">Recommended Action</span>
+                                                  <p className="text-slate-300 font-sans leading-normal">{r.recommendedAction}</p>
+                                                </div>
+                                              </div>
+
+                                              <div className="border-t border-white/5 pt-3 mt-1 flex justify-between items-center">
+                                                <span className="text-[8px] text-slate-500 font-mono">ID: {r.clauseId}</span>
+                                                {cl && (
+                                                  <button
+                                                    onClick={() => jumpToClauseSection(cl.sectionNumber, cl.sectionTitle)}
+                                                    className="inline-flex items-center gap-1 rounded bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-1 hover:bg-red-500/20 font-semibold cursor-pointer transition-colors text-[9px]"
+                                                  >
+                                                    <span>Scroll to Source</span>
+                                                    <ArrowUpRight size={9} />
+                                                  </button>
+                                                )}
+                                              </div>
+
+                                            </div>
+
+                                          </div>
+
+                                        </div>
+
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+
+                    </div>
+                  )}
+
+                </motion.div>
+              )}
             </AnimatePresence>
 
           </div>
@@ -1373,7 +2046,7 @@ export const ContractDetails: React.FC = () => {
                   </button>
                 </div>
               </motion.div>
-            ) : (
+            ) : activeTab === 'ai' ? (
               // AI Intelligence Workspace Details Sidebar
               <motion.div
                 key="ai-sidebar"
@@ -1512,6 +2185,120 @@ export const ContractDetails: React.FC = () => {
                     })()}
                   </div>
                 )}
+              </motion.div>
+            ) : (
+              // Risk & Compliance Sidebar
+              <motion.div
+                key="risk-sidebar"
+                initial={{ opacity: 0, x: 5 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -5 }}
+                className="space-y-4 text-left"
+              >
+                {/* Heatmap Panel */}
+                <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-3 glass-panel">
+                  <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                    <Layers size={14} className="text-red-400" />
+                    <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Risk Heatmap</h4>
+                  </div>
+                  <p className="text-[10px] text-slate-400 leading-normal">
+                    Interactive page-level risk intensity grid. Click a page to scroll to its starting section in the viewer.
+                  </p>
+                  
+                  {/* Heatmap Grid */}
+                  <div className="grid grid-cols-4 gap-2 max-h-[200px] overflow-y-auto pr-1">
+                    {Array.from({ length: contract.pageCount || 1 }).map((_, i) => {
+                      const pageNum = i + 1;
+                      const pageRisks = clauseRisks.filter(r => {
+                        const cl = clauses.find(c => c.clauseId === r.clauseId);
+                        if (!cl) return false;
+                        return getClausePageNumber(cl) === pageNum;
+                      });
+
+                      const maxScore = pageRisks.length > 0 ? Math.max(...pageRisks.map(r => r.riskScore)) : 0;
+                      
+                      let colorClass = 'bg-white/5 border-white/5 text-slate-500 hover:bg-white/10';
+                      let statusDot = '⚪';
+                      if (maxScore >= 81) {
+                        colorClass = 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20';
+                        statusDot = '🔴';
+                      } else if (maxScore >= 61) {
+                        colorClass = 'bg-orange-500/10 border-orange-500/30 text-orange-400 hover:bg-orange-500/20';
+                        statusDot = '🟠';
+                      } else if (maxScore >= 41) {
+                        colorClass = 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20';
+                        statusDot = '🟡';
+                      } else if (maxScore >= 21) {
+                        colorClass = 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20';
+                        statusDot = '🔵';
+                      } else if (maxScore >= 1) {
+                        colorClass = 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20';
+                        statusDot = '🟢';
+                      }
+
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => {
+                            const sec = contract.structuredText?.find(s => getSectionPageNumber(s.id) === pageNum);
+                            if (sec) {
+                              setActiveTab('viewer');
+                              setTimeout(() => scrollToSection(sec.id), 100);
+                            } else {
+                              setActiveTab('viewer');
+                            }
+                          }}
+                          className={`flex flex-col items-center justify-center p-2 rounded-xl border text-[10px] font-bold font-mono transition-all cursor-pointer ${colorClass}`}
+                          title={`Page ${pageNum} - Max Risk: ${maxScore || 'None'}`}
+                        >
+                          <span>P. {pageNum}</span>
+                          <span className="text-[8px] mt-0.5">{statusDot}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Missing expected clauses Advisor */}
+                {contract.missingClauses && contract.missingClauses.length > 0 && (
+                  <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-3 glass-panel">
+                    <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                      <ShieldAlert size={14} className="text-amber-500 animate-pulse" />
+                      <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Missing Core Safeguards</h4>
+                    </div>
+                    
+                    <div className="space-y-2 max-h-[190px] overflow-y-auto pr-1 text-2xs">
+                      {contract.missingClauses.map((c: string) => (
+                        <div key={c} className="rounded-xl border border-amber-500/10 bg-amber-500/3 p-2 text-3xs space-y-1">
+                          <div className="flex items-center gap-1.5 font-bold text-amber-400 uppercase tracking-wide">
+                            <AlertTriangle size={10} />
+                            <span>{c} Clause Missing</span>
+                          </div>
+                          <p className="text-slate-400 font-sans leading-normal">
+                            This agreement omits standard {c} protections. Consider negotiating it to shield liability.
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Operations & Refresh panel */}
+                <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-3.5 glass-panel">
+                  <div className="flex items-center gap-2 border-b border-white/5 pb-2">
+                    <Sparkles size={14} className="text-red-400" />
+                    <h4 className="font-heading font-extrabold text-[10px] uppercase tracking-wider text-slate-200">Risk Actions</h4>
+                  </div>
+                  
+                  <button
+                    onClick={runRiskAnalysis}
+                    disabled={isAnalyzingRisk}
+                    className="w-full rounded-xl border border-red-500/10 bg-red-500/5 hover:bg-red-500/10 text-red-400 py-2.5 text-2xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={isAnalyzingRisk ? 'animate-spin' : ''} />
+                    <span>{isAnalyzingRisk ? 'Refreshing Scores...' : 'Refresh Risk Scores'}</span>
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
