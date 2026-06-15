@@ -17,6 +17,7 @@ import { Footer } from './components/layout/Footer';
 
 // Pages
 import { Landing } from './pages/Landing';
+import { LandingLedger } from './pages/LandingLedger';
 import { Dashboard } from './pages/Dashboard';
 import { Contracts } from './pages/Contracts';
 import { ContractDetails } from './pages/ContractDetails';
@@ -34,7 +35,7 @@ const AppContent = () => {
   
   const authPaths = ['/login', '/register', '/forgot-password'];
   const isAuthPage = authPaths.includes(location.pathname);
-  const isLandingPage = location.pathname === '/';
+  const isLandingPage = location.pathname === '/' || location.pathname === '/ledger';
 
   if (isLandingPage || isAuthPage) {
     return (
@@ -42,6 +43,7 @@ const AppContent = () => {
         <AnimatePresence mode="wait">
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<Landing />} />
+            <Route path="/ledger" element={<LandingLedger />} />
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
             <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
