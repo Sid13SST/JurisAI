@@ -187,7 +187,7 @@ export const Landing: React.FC = () => {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <Logo showText={true} iconSize={30} />
-            <span className="hidden font-mono-tech text-[10px] uppercase tracking-[0.2em] text-forensic-mist sm:block">
+            <span className="hidden font-mono text-[10px] uppercase tracking-[0.25em] text-forensic-mist sm:block">
               / risk engine
             </span>
           </div>
@@ -232,7 +232,7 @@ export const Landing: React.FC = () => {
           <div className="lg:col-span-5">
             <div className="mb-6 inline-flex items-center gap-2 border border-forensic-line bg-forensic-graphite px-3 py-1.5">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#FF3B30]" />
-              <span className="font-mono-tech text-[10px] uppercase tracking-[0.25em] text-forensic-mist">
+              <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-forensic-mist">
                 Live Forensic Analysis
               </span>
             </div>
@@ -275,7 +275,7 @@ export const Landing: React.FC = () => {
               ].map((m) => (
                 <div key={m.k} className="px-4 py-3">
                   <div className="font-display text-xl font-bold text-forensic-bone">{m.v}</div>
-                  <div className="font-mono-tech text-[9px] uppercase tracking-[0.2em] text-forensic-mist">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-forensic-mist">
                     {m.k}
                   </div>
                 </div>
@@ -287,22 +287,22 @@ export const Landing: React.FC = () => {
           <div className="lg:col-span-7">
             <div className="relative h-[420px] w-full overflow-hidden border border-forensic-line bg-[#0A0A0C]/40 sm:h-[520px]">
               {/* HUD frame */}
-              <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-2 font-mono-tech text-[9px] uppercase tracking-[0.2em] text-forensic-mist">
+              <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.2em] text-forensic-mist">
                 <ShieldAlert size={12} className="text-[#FF3B30]" />
                 contract_audit.scan
               </div>
-              <div className="pointer-events-none absolute right-3 top-3 z-10 font-mono-tech text-[9px] uppercase tracking-[0.2em] text-[#FF3B30]">
+              <div className="pointer-events-none absolute right-3 top-3 z-10 font-mono text-[9px] uppercase tracking-[0.2em] text-[#FF3B30]">
                 ● REC
               </div>
-              <div className="pointer-events-none absolute bottom-3 left-3 z-10 font-mono-tech text-[9px] uppercase tracking-[0.2em] text-forensic-mist">
+              <div className="pointer-events-none absolute bottom-3 left-3 z-10 font-mono text-[9px] uppercase tracking-[0.2em] text-forensic-mist">
                 risk_index: <span className="text-[#FF3B30]">82 / 100</span> · critical band
               </div>
-              <div className="pointer-events-none absolute bottom-3 right-3 z-10 font-mono-tech text-[9px] uppercase tracking-[0.2em] text-forensic-mist">
+              <div className="pointer-events-none absolute bottom-3 right-3 z-10 font-mono text-[9px] uppercase tracking-[0.2em] text-forensic-mist">
                 webgl · 60fps
               </div>
               <Suspense
                 fallback={
-                  <div className="flex h-full w-full items-center justify-center font-mono-tech text-[10px] uppercase tracking-[0.25em] text-forensic-mist">
+                  <div className="flex h-full w-full items-center justify-center font-mono text-[10px] uppercase tracking-[0.25em] text-forensic-mist">
                     <span className="animate-pulse">initializing scan…</span>
                   </div>
                 }
@@ -315,7 +315,7 @@ export const Landing: React.FC = () => {
 
         {/* Clause ticker */}
         <div className="relative overflow-hidden border-t border-forensic-line bg-forensic-graphite py-2.5">
-          <div className="flex w-max animate-[ticker-scroll_38s_linear_infinite] gap-10 whitespace-nowrap font-mono-tech text-[10px] uppercase tracking-[0.2em] text-forensic-mist">
+          <div className="flex w-max animate-[ticker-scroll_38s_linear_infinite] gap-10 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.2em] text-forensic-mist">
             {[...tickerItems, ...tickerItems].map((item, i) => (
               <span key={i} className="flex items-center gap-3">
                 <span className="h-1 w-1 bg-[#FF3B30]" />
@@ -355,7 +355,7 @@ export const Landing: React.FC = () => {
                   <span className={`inline-flex border bg-forensic-graphite p-2.5 ${bandColor(feat.band)}`}>
                     {feat.icon}
                   </span>
-                  <span className="font-mono-tech text-[10px] uppercase tracking-[0.2em] text-forensic-mist">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-forensic-mist">
                     {feat.code}
                   </span>
                 </div>
@@ -410,7 +410,7 @@ export const Landing: React.FC = () => {
 
                 <div className="relative flex items-center gap-2">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#FF3B30]" />
-                  <span className="font-mono-tech text-[9px] uppercase tracking-[0.25em] text-forensic-mist">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.25em] text-forensic-mist">
                     Station {st.step}
                   </span>
                 </div>

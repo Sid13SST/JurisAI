@@ -24,8 +24,8 @@
   --color-forensic-mist: #C4C8D0;
   --color-forensic-bone: #F6F5F2;
 
-  --font-display: 'Chakra Petch', system-ui, sans-serif;
-  --font-mono-tech: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono-tech: 'Inter', system-ui, -apple-system, sans-serif;
 
   /* The Ledger — editorial legal theme */
   --color-ledger-ink: #1A1714;
@@ -138,8 +138,8 @@ body {
   to   { transform: translateX(-50%); }
 }
 
-.font-display   { font-family: 'Chakra Petch', system-ui, sans-serif; }
-.font-mono-tech { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+.font-display   { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+.font-mono-tech { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
 
 /* Fine engineering grid backdrop */
 .forensic-grid {
