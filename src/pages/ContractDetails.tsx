@@ -32,6 +32,7 @@ import { useToast } from '../contexts/ToastContext';
 import { doc, onSnapshot, updateDoc, deleteDoc, collection, query, where } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type { Contract } from '../types/contractTypes';
+import { SummaryTab } from '../components/contracts/SummaryTab';
 
 interface ClauseDoc {
   clauseId: string;
@@ -86,8 +87,8 @@ export const ContractDetails: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
-  // Tab: 'viewer' | 'ai' | 'risk'
-  const [activeTab, setActiveTab] = useState<'viewer' | 'ai' | 'risk'>('viewer');
+  // Tab: 'viewer' | 'ai' | 'risk' | 'summary'
+  const [activeTab, setActiveTab] = useState<'viewer' | 'ai' | 'risk' | 'summary'>('viewer');
 
   // Outline/TOC filtering
   const [outlineSearch, setOutlineSearch] = useState('');
@@ -828,6 +829,23 @@ export const ContractDetails: React.FC = () => {
           )}
           {activeTab === 'risk' && (
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-red-500 to-orange-500" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('summary')}
+          className={`relative py-3 px-6 text-2xs font-extrabold tracking-wider uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'summary' ? 'text-purple-400 text-glow' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Sparkles size={12} className={contract.summaryStatus === 'completed' ? 'text-purple-400' : 'text-slate-500'} />
+          <span>Executive Summary</span>
+          {contract.summaryStatus === 'completed' && (
+            <span className="ml-1 px-1.5 py-0.5 text-[8px] bg-purple-500/10 border border-purple-500/20 text-purple-400 font-extrabold rounded-md uppercase tracking-wide">
+              Ready
+            </span>
+          )}
+          {activeTab === 'summary' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-purple-500 to-pink-500" />
           )}
         </button>
       </div>
@@ -2301,6 +2319,28 @@ export const ContractDetails: React.FC = () => {
                 </div>
               </motion.div>
             )}
+
+              {activeTab === 'summary' && (
+                <motion.div
+                  key="summary-tab"
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="flex flex-col h-full overflow-hidden"
+                >
+                  <SummaryTab
+                    contract={contract}
+                    onContractUpdate={async (patch) => {
+                      try {
+                        const docRef = doc(db, 'contracts', contract.contractId);
+                        await updateDoc(docRef, patch as any);
+                      } catch (err) {
+                        console.error('Failed to update contract:', err);
+                      }
+                    }}
+                  />
+                </motion.div>
+              )}
           </AnimatePresence>
 
         </div>

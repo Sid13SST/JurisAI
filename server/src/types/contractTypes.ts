@@ -1,3 +1,10 @@
+/* Server-side mirror of frontend types.
+ * These types are also defined in src/types/contractTypes.ts on the frontend.
+ * Kept in sync manually — both files export the same shape. */
+
+export type ContractStatus = 'uploaded' | 'processing' | 'parsed' | 'analysis_pending';
+export type ContractCategory = 'NDA' | 'Employment' | 'Vendor' | 'Partnership' | 'SaaS' | 'DPA' | 'Other';
+
 export interface StructuredSection {
   id: string;
   sectionNumber: string;
@@ -5,10 +12,6 @@ export interface StructuredSection {
   content: string;
   level: number;
 }
-
-export type ContractStatus = 'uploaded' | 'processing' | 'parsed' | 'analysis_pending';
-
-export type ContractCategory = 'NDA' | 'Employment' | 'Vendor' | 'Partnership' | 'SaaS' | 'DPA' | 'Other';
 
 export interface Contract {
   contractId: string;
@@ -83,10 +86,6 @@ export interface RiskAnalysis {
   };
   createdAt: string;
 }
-
-/* ----------------------------------------------------------------
- * Executive Summary & Reporting Types — Phase 6
- * ----------------------------------------------------------------*/
 
 export type SummaryType = 'executive' | 'business' | 'legal';
 
@@ -195,7 +194,6 @@ export interface StoredSummary {
 }
 
 export type ReportFormat = 'pdf' | 'docx';
-
 export type ReportType = 'executive' | 'business' | 'legal' | 'full';
 
 export interface StoredReport {
