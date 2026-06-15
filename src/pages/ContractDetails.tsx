@@ -22,11 +22,13 @@ import {
   Search,
   ArrowUpRight,
   ShieldAlert,
-  Copy
+  Copy,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import { PageContainer } from '../components/layout/PageContainer';
+import { ChatPanel } from '../components/chat/ChatPanel';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { doc, onSnapshot, updateDoc, deleteDoc, collection, query, where } from 'firebase/firestore';
@@ -87,7 +89,7 @@ export const ContractDetails: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Tab: 'viewer' | 'ai' | 'risk'
-  const [activeTab, setActiveTab] = useState<'viewer' | 'ai' | 'risk'>('viewer');
+  const [activeTab, setActiveTab] = useState<'viewer' | 'ai' | 'risk' | 'chat'>('viewer');
 
   // Outline/TOC filtering
   const [outlineSearch, setOutlineSearch] = useState('');
@@ -830,9 +832,31 @@ export const ContractDetails: React.FC = () => {
             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-red-500 to-orange-500" />
           )}
         </button>
+        <button
+          onClick={() => setActiveTab('chat')}
+          className={`relative py-3 px-6 text-2xs font-extrabold tracking-wider uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'chat' ? 'text-primary text-glow-primary' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <MessageSquare size={12} className={activeTab === 'chat' ? 'text-primary' : 'text-slate-500'} />
+          <span>AI Chat</span>
+          {activeTab === 'chat' && (
+            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-primary to-secondary" />
+          )}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 text-left">
+      {activeTab === 'chat' && (
+        <ChatPanel
+          contract={contract}
+          clauses={clauses}
+          clauseRisks={clauseRisks}
+          riskAnalysis={riskAnalysis}
+          onJumpToSource={jumpToClauseSection}
+        />
+      )}
+
+      <div className={`${activeTab === 'chat' ? 'hidden' : 'grid'} grid-cols-1 gap-6 lg:grid-cols-12 text-left`}>
         
         {/* Left Pane: Document Outline / Table of Contents (3 cols) */}
         <div className="lg:col-span-3 flex flex-col space-y-4">
