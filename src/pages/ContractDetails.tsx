@@ -22,11 +22,13 @@ import {
   Search,
   ArrowUpRight,
   ShieldAlert,
-  Copy
+  Copy,
+  MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import { PageContainer } from '../components/layout/PageContainer';
+import { ChatPanel } from '../components/chat/ChatPanel';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { doc, onSnapshot, updateDoc, deleteDoc, collection, query, where } from 'firebase/firestore';
@@ -850,7 +852,17 @@ export const ContractDetails: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 text-left">
+      {activeTab === 'chat' && (
+        <ChatPanel
+          contract={contract}
+          clauses={clauses}
+          clauseRisks={clauseRisks}
+          riskAnalysis={riskAnalysis}
+          onJumpToSource={jumpToClauseSection}
+        />
+      )}
+
+      <div className={`${activeTab === 'chat' ? 'hidden' : 'grid'} grid-cols-1 gap-6 lg:grid-cols-12 text-left`}>
         
         {/* Left Pane: Document Outline / Table of Contents (3 cols) */}
         <div className="lg:col-span-3 flex flex-col space-y-4">
