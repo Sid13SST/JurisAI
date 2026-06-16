@@ -21,6 +21,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { name: 'Command Center', path: '/dashboard', icon: <LayoutDashboard size={18} /> },
     { name: 'Contracts Vault', path: '/contracts', icon: <FileText size={18} /> },
     { name: 'Contract Comparator', path: '/comparison', icon: <GitCompare size={18} /> },
+    { name: 'Legal Copilot', path: '/copilot', icon: <Sparkles size={18} /> },
     { name: 'Analytics Terminal', path: '/analytics', icon: <BarChart3 size={18} /> },
     { name: 'System Settings', path: '/settings', icon: <Settings size={18} /> },
   ];

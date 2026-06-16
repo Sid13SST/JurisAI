@@ -21,6 +21,7 @@ import { LandingLedger } from './pages/LandingLedger';
 import { Dashboard } from './pages/Dashboard';
 import { Contracts } from './pages/Contracts';
 import { ContractDetails } from './pages/ContractDetails';
+import { LegalCopilot } from './pages/LegalCopilot';
 import { Comparison } from './pages/Comparison';
 import { Analytics } from './pages/Analytics';
 import { Settings } from './pages/Settings';
@@ -70,6 +71,7 @@ const AppContent = () => {
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/contracts" element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
               <Route path="/contracts/:id" element={<ProtectedRoute><ContractDetails /></ProtectedRoute>} />
+              <Route path="/copilot" element={<ProtectedRoute><LegalCopilot /></ProtectedRoute>} />
               <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
               <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
