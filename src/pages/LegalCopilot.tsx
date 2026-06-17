@@ -9,10 +9,10 @@ import {
   generateNegotiationSuggestions,
   calculateReadinessScore,
   getLegalInsights,
-  ComplianceAnalysis,
-  NegotiationSuggestion,
-  ReadinessScore,
-  LegalInsights
+  type ComplianceAnalysis,
+  type NegotiationSuggestion,
+  type ReadinessScore,
+  type LegalInsights
 } from '../services/copilot.service';
 
 export const LegalCopilot: React.FC = () => {
