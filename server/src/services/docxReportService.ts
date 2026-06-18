@@ -72,12 +72,12 @@ function priorityColor(priority: string): string {
   }
 }
 
-function p(text: string, options: { bold?: boolean; size?: number; color?: string; spacingAfter?: number; alignment?: any } = {}): Paragraph {
-  const { bold = false, size = 22, color = COLOR_TEXT, spacingAfter = 120, alignment } = options;
+function p(text: string, options: { bold?: boolean; italics?: boolean; size?: number; color?: string; spacingAfter?: number; alignment?: any } = {}): Paragraph {
+  const { bold = false, italics = false, size = 22, color = COLOR_TEXT, spacingAfter = 120, alignment } = options;
   return new Paragraph({
     alignment,
     spacing: { after: spacingAfter },
-    children: [new TextRun({ text, bold, size, color, font: 'Calibri' })]
+    children: [new TextRun({ text, bold, italics, size, color, font: 'Calibri' })]
   });
 }
 
@@ -448,6 +448,231 @@ export async function generateDocxReport(input: DocxReportInput): Promise<Buffer
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
                 children: [new TextRun({ text: 'JurisAI Executive Report', size: 18, color: COLOR_MUTED, italics: true, font: 'Calibri' })]
+              })
+            ]
+          })
+        },
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new TextRun({ text: 'Page ', size: 18, color: COLOR_MUTED, font: 'Calibri' }),
+                  new TextRun({ children: [PageNumber.CURRENT], size: 18, color: COLOR_MUTED, font: 'Calibri' }),
+                  new TextRun({ text: ' of ', size: 18, color: COLOR_MUTED, font: 'Calibri' }),
+                  new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 18, color: COLOR_MUTED, font: 'Calibri' })
+                ]
+              })
+            ]
+          })
+        },
+        children: children as any
+      }
+    ]
+  });
+
+  const buffer = await Packer.toBuffer(doc);
+  return buffer;
+}
+
+/**
+ * Generates a comparison report in Word (.docx) format compiling side-by-side differences,
+ * clause alignments, version diffs, risk changes, and AI explanations.
+ */
+export async function generateComparisonDocxReport(
+  comparison: any,
+  contracts: any[],
+  generatedAt: string
+): Promise<Buffer> {
+  const children: (Paragraph | Table)[] = [];
+
+  // Cover Page
+  children.push(
+    new Paragraph({ spacing: { before: 1200 }, children: [new TextRun({ text: 'JurisAI', bold: true, size: 96, color: COLOR_PRIMARY, font: 'Calibri' })] }),
+    new Paragraph({ spacing: { after: 240 }, children: [new TextRun({ text: 'Due Diligence & Comparison', bold: true, size: 48, color: COLOR_SECONDARY, font: 'Calibri' })] }),
+    new Paragraph({ spacing: { after: 600 }, children: [new TextRun({ text: `Type: ${comparison.comparisonType.toUpperCase()}`, italics: true, size: 32, color: COLOR_MUTED, font: 'Calibri' })] }),
+    new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: 'AGREEMENTS AUDITED:', bold: true, size: 20, color: COLOR_SECONDARY, font: 'Calibri', characterSpacing: 80 })] })
+  );
+
+  contracts.forEach((c, idx) => {
+    children.push(new Paragraph({
+      spacing: { after: 40 },
+      children: [
+        new TextRun({ text: `${idx + 1}. ${c.contractName} (${c.contractCategory || 'Other'})`, bold: true, size: 24, color: COLOR_TEXT, font: 'Calibri' }),
+        new TextRun({ text: ` — Risk Score: ${c.overallRiskScore || 0} / 100 (${c.riskLevel || 'Low'} Risk)`, size: 20, color: COLOR_MUTED, font: 'Calibri' })
+      ]
+    }));
+  });
+
+  children.push(
+    new Paragraph({ spacing: { before: 400, after: 120 }, children: [new TextRun({ text: `Report generated on ${generatedAt}`, italics: true, size: 20, color: COLOR_MUTED, font: 'Calibri' })] }),
+    new Paragraph({ children: [new PageBreak()] })
+  );
+
+  const res = comparison.results;
+
+  if (comparison.comparisonType === 'contracts') {
+    children.push(heading('Executive Summary', 'Heading1'));
+    if (res.summary) {
+      if (res.summary.keyDifferences && res.summary.keyDifferences.length > 0) {
+        children.push(heading('Key Differences', 'Heading2'));
+        children.push(...bulletList(res.summary.keyDifferences));
+      }
+      if (res.summary.topRisks && res.summary.topRisks.length > 0) {
+        children.push(heading('Top Risks & Exposures', 'Heading2'));
+        children.push(...bulletList(res.summary.topRisks));
+      }
+      if (res.summary.businessImpact && res.summary.businessImpact.length > 0) {
+        children.push(heading('Business Impact', 'Heading2'));
+        children.push(...bulletList(res.summary.businessImpact));
+      }
+      if (res.summary.negotiationConsiderations && res.summary.negotiationConsiderations.length > 0) {
+        children.push(heading('Negotiation Considerations', 'Heading2'));
+        children.push(...bulletList(res.summary.negotiationConsiderations));
+      }
+    }
+
+    if (res.categories) {
+      children.push(heading('Side-by-Side Clause Matrix', 'Heading1'));
+      for (const [catName, catData] of Object.entries(res.categories)) {
+        const cData = catData as any;
+        children.push(heading(catName, 'Heading2'));
+        children.push(p(`Semantic Similarity Score: ${cData.similarityScore}%`, { bold: true, color: COLOR_MUTED }));
+        
+        children.push(labelP('Explanation'));
+        children.push(p(cData.explanation));
+
+        children.push(labelP('Business Impact'));
+        children.push(p(cData.businessImpact));
+
+        children.push(labelP('Risk Impact'));
+        children.push(p(cData.riskImpact, { color: COLOR_DANGER }));
+      }
+    }
+
+    if (res.unusualClauses && res.unusualClauses.length > 0) {
+      children.push(heading('Unusual / Deviating Clauses', 'Heading1'));
+      res.unusualClauses.forEach((uc: any) => {
+        children.push(heading(`${uc.clauseType} (in ${uc.contractName})`, 'Heading2'));
+        children.push(p(`Findings: ${uc.explanation}`));
+        children.push(p(`Why it deviates: ${uc.whyUnusual}`, { color: COLOR_DANGER }));
+      });
+    }
+
+  } else if (comparison.comparisonType === 'clauses') {
+    const clauseName = comparison.results.clauses?.[0]?.clauseType || 'Clause';
+    children.push(heading(`Clause Differential: ${clauseName}`, 'Heading1'));
+
+    if (res.aiExplanation) {
+      children.push(p('Comparative AI Overview:', { bold: true }));
+      children.push(p(res.aiExplanation.explanation));
+      children.push(labelP('Business Impact'));
+      children.push(p(res.aiExplanation.businessImpact));
+      children.push(labelP('Risk Impact'));
+      children.push(p(res.aiExplanation.riskImpact, { color: COLOR_DANGER }));
+      children.push(p(`Semantic Similarity Index: ${res.aiExplanation.similarityScore}%`, { bold: true, color: COLOR_PRIMARY }));
+    }
+
+    if (res.clauses) {
+      children.push(heading('Individual Clause Alignments', 'Heading1'));
+      res.clauses.forEach((cl: any) => {
+        children.push(heading(cl.contractName, 'Heading2'));
+        children.push(p(`Risk Score: ${cl.riskScore} (${cl.riskLevel}) | Classification: ${cl.marketClassification}`, { bold: true, color: COLOR_MUTED }));
+        children.push(p(`"${cl.clauseText}"`, { italics: true }));
+        children.push(p(`Summary: ${cl.summary}`));
+      });
+    }
+
+  } else if (comparison.comparisonType === 'versions') {
+    children.push(heading('Document Version Comparison', 'Heading1'));
+
+    if (res.diffSummary) {
+      children.push(heading('Revision Summary', 'Heading2'));
+      children.push(p(res.diffSummary.explanation));
+      children.push(labelP('Business Impact'));
+      children.push(p(res.diffSummary.businessImpact));
+      children.push(labelP('Risk Profile Changes'));
+      children.push(p(res.diffSummary.riskImpact, { color: COLOR_DANGER }));
+      children.push(p(`Similarity Index: ${res.diffSummary.similarityScore}%`, { bold: true, color: COLOR_PRIMARY }));
+    }
+
+    if (res.sectionDiffs) {
+      children.push(heading('Aligned Section Variances', 'Heading1'));
+      res.sectionDiffs.forEach((sd: any) => {
+        const secLabel = sd.sectionNumber ? `${sd.sectionNumber} ${sd.title}` : sd.title;
+        children.push(heading(secLabel, 'Heading2'));
+        if (sd.explanation) {
+          children.push(p(`Change explanation: ${sd.explanation}`));
+        }
+
+        const diffText = sd.diffs.map((d: any) => {
+          if (d.type === 'added') return `[+] ${d.value}`;
+          if (d.type === 'removed') return `[-] ${d.value}`;
+          return d.value;
+        }).join(' ');
+
+        const truncated = diffText.length > 500 ? diffText.substring(0, 500) + '... (truncated)' : diffText;
+        children.push(p(`Diff preview: "${truncated}"`, { color: COLOR_MUTED, italics: true }));
+      });
+    }
+
+  } else if (comparison.comparisonType === 'risk') {
+    children.push(heading('Risk Delta Comparison', 'Heading1'));
+
+    if (res.aiExplanation) {
+      children.push(heading('Risk Exposure Assessment', 'Heading2'));
+      children.push(p(res.aiExplanation.deltaExplanation));
+      children.push(labelP('Business Impact'));
+      children.push(p(res.aiExplanation.businessImpact));
+      children.push(labelP('Practical Significance'));
+      children.push(p(res.aiExplanation.practicalSignificance));
+    }
+
+    if (res.overallScores) {
+      children.push(heading('Agreement Risk Scoring', 'Heading1'));
+      for (const [cid, val] of Object.entries(res.overallScores)) {
+        const v = val as any;
+        children.push(heading(`${v.contractName}: Score ${v.score} / 100 (${v.riskLevel} Risk)`, 'Heading2'));
+        
+        const breakdown = res.riskBreakdowns?.[cid];
+        if (breakdown) {
+          const bdText = `Financial: ${breakdown.Financial} | Legal: ${breakdown.Legal} | Operational: ${breakdown.Operational} | Reputational: ${breakdown.Reputational}`;
+          children.push(p(bdText, { color: COLOR_MUTED }));
+        }
+
+        const missing = res.missingClauses?.[cid];
+        if (missing && missing.length > 0) {
+          children.push(p(`Missing Protections: ${missing.join(', ')}`, { color: COLOR_DANGER }));
+        }
+      }
+    }
+  }
+
+  const doc = new Document({
+    creator: 'JurisAI',
+    title: `JurisAI Comparison Report`,
+    description: 'AI-generated contract comparison report',
+    styles: {
+      default: {
+        document: {
+          run: { font: 'Calibri', size: 22 }
+        }
+      }
+    },
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 }
+          }
+        },
+        headers: {
+          default: new Header({
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                children: [new TextRun({ text: 'JurisAI Comparison Report', size: 18, color: COLOR_MUTED, italics: true, font: 'Calibri' })]
               })
             ]
           })
