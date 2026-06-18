@@ -7,6 +7,7 @@ import riskRoutes from './routes/riskRoutes';
 import summaryRoutes from './routes/summaryRoutes';
 import chatRoutes from './routes/chatRoutes';
 import comparisonRoutes from './routes/comparisonRoutes';
+import copilotRoutes from './routes/copilot.routes';
 
 // Initialize env config
 dotenv.config();
@@ -42,6 +43,7 @@ app.use('/api/ai', riskRoutes);
 app.use('/api/ai', summaryRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/comparison', comparisonRoutes);
+app.use('/api', copilotRoutes);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
