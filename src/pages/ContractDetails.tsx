@@ -178,7 +178,8 @@ export const ContractDetails: React.FC = () => {
 
     const q = query(
       collection(db, 'clauses'),
-      where('contractId', '==', id)
+      where('contractId', '==', id),
+      where('userId', '==', currentUser.uid)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -226,7 +227,8 @@ export const ContractDetails: React.FC = () => {
 
     const q = query(
       collection(db, 'clauseRisk'),
-      where('contractId', '==', id)
+      where('contractId', '==', id),
+      where('userId', '==', currentUser.uid)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
