@@ -1,6 +1,6 @@
 import { auth } from '../firebase/config';
 
-const API_BASE = 'http://localhost:5001/api';
+const API_BASE = 'https://jurisai-feks.onrender.com/api';
 
 async function getToken(): Promise<string> {
   const user = auth.currentUser;

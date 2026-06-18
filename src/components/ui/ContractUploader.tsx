@@ -94,7 +94,7 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
 
       console.log('ContractUploader: Sending POST request to backend /api/contracts/upload-and-parse...');
       // 2. Upload and Parse directly on local backend (requires no external GCP credentials)
-      const response = await fetch('http://localhost:5001/api/contracts/upload-and-parse', {
+      const response = await fetch('https://jurisai-feks.onrender.com/api/contracts/upload-and-parse', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -124,7 +124,7 @@ export const ContractUploader: React.FC<ContractUploaderProps> = ({ onUploadComp
       console.log('ContractUploader: Parsed data received successfully from server:', resData);
 
       // 3. Write parsed contract record to Firestore from Client SDK (authenticated & free)
-      const downloadUrl = `http://localhost:5001/api/contracts/download/${currentUser.uid}/${contractId}?fileName=${encodeURIComponent(file.name)}&fileType=${encodeURIComponent(fileTypeVal)}`;
+      const downloadUrl = `https://jurisai-feks.onrender.com/api/contracts/download/${currentUser.uid}/${contractId}?fileName=${encodeURIComponent(file.name)}&fileType=${encodeURIComponent(fileTypeVal)}`;
       const contractDocRef = doc(db, 'contracts', contractId);
 
       const contractData = {

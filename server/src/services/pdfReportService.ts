@@ -596,6 +596,34 @@ function drawRiskBreakdownBars(ctx: PdfBuilderContext, breakdown: { Financial: n
   ctx.cursorY -= 6;
 }
 
+function sanitizeText(text: string): string {
+  if (typeof text !== 'string') return text;
+  return text
+    .replace(/₹/g, 'Rs. ')
+    .replace(/[\u2018\u2019]/g, "'") // smart single quotes
+    .replace(/[\u201C\u201D]/g, '"') // smart double quotes
+    .replace(/[\u2013\u2014]/g, '-') // dashes
+    .replace(/[^\x00-\xFF]/g, '?');  // fallback for any other non-cp1252 characters
+}
+
+function sanitizeObject<T>(obj: T): T {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'string') {
+    return sanitizeText(obj) as unknown as T;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeObject(item)) as unknown as T;
+  }
+  if (typeof obj === 'object') {
+    const newObj: any = {};
+    for (const key of Object.keys(obj)) {
+      newObj[key] = sanitizeObject((obj as any)[key]);
+    }
+    return newObj as T;
+  }
+  return obj;
+}
+
 export interface ReportInput {
   reportType: ReportType;
   contractName: string;
@@ -606,7 +634,8 @@ export interface ReportInput {
   riskAnalysis: RiskAnalysis | null;
 }
 
-export async function generatePdfReport(input: ReportInput): Promise<Uint8Array> {
+export async function generatePdfReport(rawInput: ReportInput): Promise<Uint8Array> {
+  const input = sanitizeObject(rawInput);
   const doc = await PDFDocument.create();
   doc.setTitle(`${input.contractName} — JurisAI Executive Report`);
   doc.setAuthor('JurisAI');

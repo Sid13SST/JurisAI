@@ -1,6 +1,6 @@
 import { auth } from '../firebase/config';
 
-const API_BASE = 'http://localhost:5001/api/chat';
+const API_BASE = 'https://jurisai-feks.onrender.com/api/chat';
 
 export type ChunkSourceType = 'section' | 'clause' | 'risk' | 'metadata';
 

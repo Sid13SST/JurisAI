@@ -1,7 +1,7 @@
 import { auth } from '../firebase/config';
 import type { StoredComparison } from '../types/comparisonTypes';
 
-const API_BASE = 'http://localhost:5001/api/comparison';
+const API_BASE = 'https://jurisai-feks.onrender.com/api/comparison';
 
 /**
  * Returns the current user's Firebase ID token, throwing if unauthenticated.

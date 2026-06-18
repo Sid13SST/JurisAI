@@ -105,7 +105,7 @@ export const Contracts: React.FC = () => {
       await deleteDoc(contractRef);
 
       // 2. Trigger local backend file deletion cleanup (non-blocking)
-      await fetch(`http://localhost:5001/api/contracts/${currentUser.uid}/${contractId}`, {
+      await fetch(`https://jurisai-feks.onrender.com/api/contracts/${currentUser.uid}/${contractId}`, {
         method: 'DELETE'
       });
 

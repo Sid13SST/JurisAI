@@ -133,7 +133,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ contract, onContractUpda
     setLoadingSummaries(true);
     try {
       const idToken = await currentUser.getIdToken();
-      const res = await fetch(`http://localhost:5001/api/ai/summary/${contract.contractId}`, {
+      const res = await fetch(`https://jurisai-feks.onrender.com/api/ai/summary/${contract.contractId}`, {
         headers: { 'Authorization': `Bearer ${idToken}` }
       });
       if (res.ok) {
@@ -152,7 +152,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ contract, onContractUpda
     setLoadingReports(true);
     try {
       const idToken = await currentUser.getIdToken();
-      const res = await fetch(`http://localhost:5001/api/ai/report/list/${contract.contractId}`, {
+      const res = await fetch(`https://jurisai-feks.onrender.com/api/ai/report/list/${contract.contractId}`, {
         headers: { 'Authorization': `Bearer ${idToken}` }
       });
       if (res.ok) {
@@ -180,7 +180,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ contract, onContractUpda
     setState(s => ({ ...s, isGenerating: true, error: null }));
     try {
       const idToken = await currentUser.getIdToken();
-      const res = await fetch('http://localhost:5001/api/ai/summary/generate', {
+      const res = await fetch('https://jurisai-feks.onrender.com/api/ai/summary/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
         body: JSON.stringify({ contractId: contract.contractId, summaryType })
@@ -207,7 +207,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ contract, onContractUpda
     setState(s => ({ ...s, isDownloadingPdf: isPdf, isDownloadingDocx: !isPdf, error: null }));
     try {
       const idToken = await currentUser.getIdToken();
-      const res = await fetch('http://localhost:5001/api/ai/report/generate', {
+      const res = await fetch('https://jurisai-feks.onrender.com/api/ai/report/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
         body: JSON.stringify({ contractId: contract.contractId, reportType, format })
@@ -234,7 +234,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ contract, onContractUpda
     if (!currentUser) return;
     try {
       const idToken = await currentUser.getIdToken();
-      const res = await fetch(`http://localhost:5001/api/ai/report/download/${reportId}`, {
+      const res = await fetch(`https://jurisai-feks.onrender.com/api/ai/report/download/${reportId}`, {
         headers: { 'Authorization': `Bearer ${idToken}` }
       });
       if (!res.ok) {

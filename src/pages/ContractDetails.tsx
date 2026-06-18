@@ -277,7 +277,7 @@ export const ContractDetails: React.FC = () => {
       await deleteDoc(docRef);
 
       // 2. Trigger local backend file deletion cleanup
-      await fetch(`http://localhost:5001/api/contracts/${currentUser.uid}/${id}`, {
+      await fetch(`https://jurisai-feks.onrender.com/api/contracts/${currentUser.uid}/${id}`, {
         method: 'DELETE'
       });
 
@@ -296,7 +296,7 @@ export const ContractDetails: React.FC = () => {
     setLoading(true);
     try {
       const idToken = await currentUser.getIdToken();
-      const response = await fetch('http://localhost:5001/api/contracts/parse', {
+      const response = await fetch('https://jurisai-feks.onrender.com/api/contracts/parse', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -329,7 +329,7 @@ export const ContractDetails: React.FC = () => {
 
       // 1. Get or generate chunks
       if (startFresh || currentChunks.length === 0) {
-        const chunkRes = await fetch('http://localhost:5001/api/ai/chunk', {
+        const chunkRes = await fetch('https://jurisai-feks.onrender.com/api/ai/chunk', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -368,7 +368,7 @@ export const ContractDetails: React.FC = () => {
         
         const chunkItem = currentChunks.find(c => c.id === chunkId)!;
         try {
-          const res = await fetch('http://localhost:5001/api/ai/analyze-chunk', {
+          const res = await fetch('https://jurisai-feks.onrender.com/api/ai/analyze-chunk', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -445,7 +445,7 @@ export const ContractDetails: React.FC = () => {
       setAnalysisChunks(prev => prev.map(c => c.id === chunkId ? { ...c, status: 'analyzing' as const, error: null } : c));
 
       const chunkItem = analysisChunks.find(c => c.id === chunkId)!;
-      const res = await fetch('http://localhost:5001/api/ai/analyze-chunk', {
+      const res = await fetch('https://jurisai-feks.onrender.com/api/ai/analyze-chunk', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -486,7 +486,7 @@ export const ContractDetails: React.FC = () => {
     setIsAnalyzing(true);
     try {
       const idToken = await currentUser.getIdToken();
-      const finalizeRes = await fetch('http://localhost:5001/api/ai/finalize-analysis', {
+      const finalizeRes = await fetch('https://jurisai-feks.onrender.com/api/ai/finalize-analysis', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -579,7 +579,7 @@ export const ContractDetails: React.FC = () => {
     setRiskAnalysisError(null);
     try {
       const idToken = await currentUser.getIdToken();
-      const response = await fetch('http://localhost:5001/api/ai/analyze-risk', {
+      const response = await fetch('https://jurisai-feks.onrender.com/api/ai/analyze-risk', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -949,8 +949,8 @@ export const ContractDetails: React.FC = () => {
           </div>
         </div>
 
-        {/* Center Pane: Active Tab (6 cols) */}
-        <div className="lg:col-span-6 flex flex-col space-y-4">
+        {/* Center Pane: Active Tab (6 cols / 9 cols for summary) */}
+        <div className={`${activeTab === 'summary' ? 'lg:col-span-9' : 'lg:col-span-6'} flex flex-col space-y-4`}>
           <div className="rounded-2xl border border-white/5 bg-[#111827]/15 p-6 backdrop-blur-md flex flex-col h-[calc(100vh-230px)] glass-panel">
             
             <AnimatePresence mode="wait">
@@ -1585,8 +1585,8 @@ export const ContractDetails: React.FC = () => {
                                   ]}
                                   margin={{ top: 5, right: 10, left: -25, bottom: 5 }}
                                 >
-                                  <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                                  <YAxis stroke="#64748b" fontSize={9} domain={[0, 100]} tickLine={false} axisLine={false} />
+                                  <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#94A3B8' }} />
+                                  <YAxis stroke="#64748b" fontSize={9} domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fill: '#94A3B8' }} />
                                   <Tooltip
                                     cursor={{ fill: 'rgba(255,255,255,0.02)' }}
                                     contentStyle={{ background: '#111827', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '9px', textAlign: 'left' }}
@@ -1721,7 +1721,7 @@ export const ContractDetails: React.FC = () => {
                       </div>
 
                       {/* Accordion review list */}
-                      <div className="flex-1 overflow-y-auto space-y-3.5 pr-2.5 scrollbar-thin">
+                      <div className="flex-1 overflow-y-auto space-y-3.5 pr-2.5 scrollbar-thin bg-black/20 rounded-2xl p-4">
                         {(() => {
                           const filteredRisks = clauseRisks.filter(r => {
                             const cl = clauses.find(c => c.clauseId === r.clauseId);
@@ -1931,10 +1931,30 @@ export const ContractDetails: React.FC = () => {
                           });
                         })()}
                       </div>
-
                     </div>
                   )}
+                </motion.div>
+              )}
 
+              {activeTab === 'summary' && (
+                <motion.div
+                  key="summary-tab"
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="flex flex-col h-full overflow-hidden"
+                >
+                  <SummaryTab
+                    contract={contract}
+                    onContractUpdate={async (patch) => {
+                      try {
+                        const docRef = doc(db, 'contracts', contract.contractId);
+                        await updateDoc(docRef, patch as any);
+                      } catch (err) {
+                        console.error('Failed to update contract:', err);
+                      }
+                    }}
+                  />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1943,10 +1963,11 @@ export const ContractDetails: React.FC = () => {
         </div>
 
         {/* Right Pane: Adapt depending on Tab (3 cols) */}
-        <div className="lg:col-span-3 space-y-4">
-          
-          <AnimatePresence mode="wait">
-            {activeTab === 'viewer' ? (
+        {activeTab !== 'summary' && (
+          <div className="lg:col-span-3 space-y-4">
+            
+            <AnimatePresence mode="wait">
+              {activeTab === 'viewer' ? (
               // Standard Details sidebar for Viewer mode
               <motion.div
                 key="viewer-sidebar"
@@ -2326,7 +2347,6 @@ export const ContractDetails: React.FC = () => {
                     </div>
                   </div>
                 )}
-
                 {/* Operations & Refresh panel */}
                 <div className="rounded-2xl border border-white/5 bg-[#111827]/20 p-4 backdrop-blur-md space-y-3.5 glass-panel">
                   <div className="flex items-center gap-2 border-b border-white/5 pb-2">
@@ -2345,31 +2365,9 @@ export const ContractDetails: React.FC = () => {
                 </div>
               </motion.div>
             )}
-
-              {activeTab === 'summary' && (
-                <motion.div
-                  key="summary-tab"
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  className="flex flex-col h-full overflow-hidden"
-                >
-                  <SummaryTab
-                    contract={contract}
-                    onContractUpdate={async (patch) => {
-                      try {
-                        const docRef = doc(db, 'contracts', contract.contractId);
-                        await updateDoc(docRef, patch as any);
-                      } catch (err) {
-                        console.error('Failed to update contract:', err);
-                      }
-                    }}
-                  />
-                </motion.div>
-              )}
-          </AnimatePresence>
-
-        </div>
+            </AnimatePresence>
+          </div>
+        )}
 
       </div>
 
