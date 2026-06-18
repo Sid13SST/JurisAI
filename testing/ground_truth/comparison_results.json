@@ -1,0 +1,16 @@
+{
+  "contractA": "saas_good",
+  "contractB": "saas_bad",
+  "expectedDifferences": [
+    {
+      "clauseType": "Limitation of Liability",
+      "differenceSeverity": "High",
+      "details": "Contract A specifies standard $1M limit, while Contract B specifies unlimited liability."
+    },
+    {
+      "clauseType": "Intellectual Property",
+      "differenceSeverity": "Medium",
+      "details": "Contract A protects client ownership of data, while Contract B assigns all intellectual property to the provider."
+    }
+  ]
+}
