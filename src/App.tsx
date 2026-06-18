@@ -28,6 +28,7 @@ import { Settings } from './pages/Settings';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { ForgotPassword } from './pages/ForgotPassword';
+import { EvaluationDashboard } from './pages/EvaluationDashboard';
 
 // Layout Wrapper to conditionally show sidebar/navbar/footer
 const AppContent = () => {
@@ -74,6 +75,7 @@ const AppContent = () => {
               <Route path="/copilot" element={<ProtectedRoute><LegalCopilot /></ProtectedRoute>} />
               <Route path="/comparison" element={<ProtectedRoute><Comparison /></ProtectedRoute>} />
               <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+              <Route path="/evaluation" element={<ProtectedRoute><EvaluationDashboard /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             </Routes>
