@@ -21,6 +21,12 @@ This project was conceptualized and developed as a core part of the **Generative
 
 ---
 
+## 📂 Testing PDFs
+For quick testing and evaluation of the JurisAI platform, we have provided a dedicated folder:
+*   [test/](file:///c:/Users/Siddhant/OneDrive/Desktop/JurisAI/test) - Contains 4 sample contract PDF files for direct upload, parsing, and testing of the intelligent clause extraction and risk analysis engine.
+
+---
+
 ## 🌟 Key Features
 JurisAI transforms complex, wordy contract agreements into plain-English briefings and visual reports for non-lawyers while maintaining professional verification matrices:
 
