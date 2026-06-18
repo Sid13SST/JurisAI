@@ -7,7 +7,8 @@ import {
   BarChart3, 
   Settings, 
   Database,
-  Sparkles
+  Sparkles,
+  ShieldCheck
 } from 'lucide-react';
 import { Logo } from '../ui/Logo';
 
@@ -23,6 +24,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { name: 'Contract Comparator', path: '/comparison', icon: <GitCompare size={18} /> },
     { name: 'Legal Copilot', path: '/copilot', icon: <Sparkles size={18} /> },
     { name: 'Analytics Terminal', path: '/analytics', icon: <BarChart3 size={18} /> },
+    { name: 'Validation Terminal', path: '/evaluation', icon: <ShieldCheck size={18} /> },
     { name: 'System Settings', path: '/settings', icon: <Settings size={18} /> },
   ];
 
