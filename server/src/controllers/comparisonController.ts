@@ -267,7 +267,7 @@ export const compareVersions = async (req: Request, res: Response): Promise<void
     // Compute diffs for each matched pair using the diff package
     const sectionDiffs: SectionDiff[] = matchedPairs.map(pair => {
       const changes = Diff.diffWords(pair.originalContent, pair.revisedContent);
-      const diffs: DiffToken[] = changes.map(c => ({
+      const diffs: DiffToken[] = changes.map((c: Diff.Change) => ({
         type: c.added ? 'added' : c.removed ? 'removed' : 'unchanged',
         value: c.value
       }));
