@@ -50,8 +50,9 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<any
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
   let attempts = 0;
-  const maxAttempts = 4;
-  let delay = 3000;
+  const maxAttempts = 6;
+  let delay = 4000;
+  let lastError: any = null;
 
   while (attempts < maxAttempts) {
     try {
@@ -72,7 +73,9 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<any
       });
 
       if (response.status === 429) {
-        console.warn(`Gemini API returned 429 (attempt ${attempts}/${maxAttempts}). Retrying in ${delay}ms...`);
+        const errorText = await response.text();
+        console.warn(`Gemini API returned 429 Rate Limit (attempt ${attempts}/${maxAttempts}). Retrying in ${delay}ms...`);
+        lastError = new Error(`Gemini API returned 429 Too Many Requests - ${errorText}`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 2.5;
         continue;
@@ -91,12 +94,13 @@ async function callGemini(systemPrompt: string, userPrompt: string): Promise<any
       return JSON.parse(cleanJson);
     } catch (err: any) {
       console.error(`Attempt ${attempts} failed in callGemini:`, err.message);
+      lastError = err;
       if (attempts >= maxAttempts) throw err;
       await new Promise(resolve => setTimeout(resolve, delay));
       delay *= 2.5;
     }
   }
-  throw new Error('AI summary failed after multiple retries.');
+  throw new Error(`AI summary failed after ${maxAttempts} retries. Last error: ${lastError ? lastError.message : 'Unknown error'}`);
 }
 
 function buildContextPrompt(ctx: ContractContextForSummary): string {

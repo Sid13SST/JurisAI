@@ -74,6 +74,8 @@ function reportIdFor(contractId: string, type: ReportType, format: ReportFormat)
   return `${contractId}-${type}-${format}-${Date.now()}`;
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
  * POST /api/ai/summary/generate
  * Body: { contractId, summaryType: 'executive' | 'business' | 'legal' | 'all' }
@@ -110,7 +112,14 @@ export const generateSummary = async (req: Request, res: Response): Promise<void
     const modelUsed = 'gemini-2.5-flash';
     const results: StoredSummary[] = [];
 
+    let isFirst = true;
     for (const t of typesToGenerate) {
+      if (!isFirst) {
+        console.log(`Sleeping 2500ms before generating ${t} summary to avoid rate limits...`);
+        await sleep(2500);
+      }
+      isFirst = false;
+
       let data: any;
       if (t === 'executive') data = await generateExecutiveSummary(ctx);
       else if (t === 'business') data = await generateBusinessSummary(ctx);
@@ -221,10 +230,22 @@ export const generateReport = async (req: Request, res: Response): Promise<void>
       if (!executive) executive = await generateExecutiveSummary(ctx);
     }
     if (reportType === 'business' || reportType === 'full') {
-      if (!business) business = await generateBusinessSummary(ctx);
+      if (!business) {
+        if (executive) {
+          console.log('Sleeping 2500ms before generating business summary to avoid rate limits...');
+          await sleep(2500);
+        }
+        business = await generateBusinessSummary(ctx);
+      }
     }
     if (reportType === 'legal' || reportType === 'full') {
-      if (!legal) legal = await generateLegalSummary(ctx);
+      if (!legal) {
+        if (executive || business) {
+          console.log('Sleeping 2500ms before generating legal summary to avoid rate limits...');
+          await sleep(2500);
+        }
+        legal = await generateLegalSummary(ctx);
+      }
     }
 
     const generatedAt = new Date().toISOString();
