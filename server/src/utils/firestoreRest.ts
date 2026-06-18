@@ -169,6 +169,10 @@ export async function getFirestoreDoc(
 
   if (!response.ok) {
     if (response.status === 404) return null;
+    if (response.status === 403) {
+      console.warn(`Firestore REST GET returned 403 Forbidden for ${collection}/${docId}. Treating as null (likely non-existent or restricted).`);
+      return null;
+    }
     const errorText = await response.text();
     throw new Error(`Firestore REST GET failed for ${collection}/${docId}: ${response.status} ${response.statusText} - ${errorText}`);
   }
