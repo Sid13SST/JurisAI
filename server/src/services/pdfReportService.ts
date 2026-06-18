@@ -165,9 +165,9 @@ function drawSectionHeading(ctx: PdfBuilderContext, text: string): void {
   ctx.cursorY -= 30;
 }
 
-function drawParagraph(ctx: PdfBuilderContext, text: string, options: { fontSize?: number; bold?: boolean; color?: any; indent?: number; spacing?: number } = {}): void {
+function drawParagraph(ctx: PdfBuilderContext, text: string, options: { fontSize?: number; bold?: boolean; color?: any; indent?: number; spacing?: number; font?: PDFFont } = {}): void {
   const { fontSize = 10, bold = false, color = COLORS.text, indent = 0, spacing = 4 } = options;
-  const font = bold ? ctx.fontBold : ctx.font;
+  const font = options.font ?? (bold ? ctx.fontBold : ctx.font);
   const maxWidth = ctx.pageWidth - 2 * ctx.marginX - indent;
   const lines = wrapText(text, font, fontSize, maxWidth);
 
@@ -873,3 +873,328 @@ export async function generatePdfReport(input: ReportInput): Promise<Uint8Array>
 
   return await doc.save();
 }
+
+/**
+ * Generates a comparison report in PDF format compiling side-by-side differences,
+ * clause alignments, version diffs, risk changes, and AI explanations.
+ */
+export async function generateComparisonPdfReport(
+  comparison: any,
+  contracts: any[],
+  generatedAt: string
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  doc.setTitle(`JurisAI Comparison Report`);
+  doc.setAuthor('JurisAI');
+  doc.setSubject('Due Diligence & Comparison Report');
+  doc.setCreator('JurisAI Reporting Engine');
+
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const fontItalic = await doc.embedFont(StandardFonts.HelveticaOblique);
+
+  const A4_WIDTH = 595.28;
+  const A4_HEIGHT = 841.89;
+
+  // Cover Page
+  const coverPage = doc.addPage([A4_WIDTH, A4_HEIGHT]);
+  const coverCtx: PdfBuilderContext = {
+    doc,
+    page: coverPage,
+    font,
+    fontBold,
+    fontItalic,
+    cursorY: A4_HEIGHT - 60,
+    pageNum: 0,
+    totalPages: 0,
+    pageWidth: A4_WIDTH,
+    pageHeight: A4_HEIGHT,
+    marginX: 60
+  };
+
+  // Draw Dark Theme Cover
+  coverPage.drawRectangle({
+    x: 0,
+    y: 0,
+    width: A4_WIDTH,
+    height: A4_HEIGHT,
+    color: COLORS.dark
+  });
+
+  // Top banner
+  coverPage.drawRectangle({
+    x: 0,
+    y: A4_HEIGHT - 12,
+    width: A4_WIDTH,
+    height: 12,
+    color: COLORS.primary
+  });
+
+  // Branding
+  coverPage.drawText('JurisAI', {
+    x: 60,
+    y: A4_HEIGHT - 90,
+    size: 36,
+    font: fontBold,
+    color: rgb(1, 1, 1)
+  });
+  coverPage.drawText('Due Diligence & Comparison Suite', {
+    x: 60,
+    y: A4_HEIGHT - 120,
+    size: 18,
+    font: fontBold,
+    color: COLORS.secondary
+  });
+
+  // Divider
+  coverPage.drawRectangle({
+    x: 60,
+    y: A4_HEIGHT - 145,
+    width: 120,
+    height: 3,
+    color: COLORS.primary
+  });
+
+  // Report details
+  coverPage.drawText(`COMPARISON REPORT: ${comparison.comparisonType.toUpperCase()}`, {
+    x: 60,
+    y: A4_HEIGHT - 180,
+    size: 11,
+    font: fontBold,
+    color: COLORS.secondary
+  });
+
+  // List of contracts compared
+  coverPage.drawText('AGREEMENTS AUDITED:', {
+    x: 60,
+    y: A4_HEIGHT - 220,
+    size: 9,
+    font: fontBold,
+    color: COLORS.textMuted
+  });
+
+  let contractY = A4_HEIGHT - 240;
+  contracts.forEach((c, idx) => {
+    coverPage.drawText(`${idx + 1}. ${c.contractName} (${c.contractCategory || 'Other'})`, {
+      x: 60,
+      y: contractY,
+      size: 12,
+      font: fontBold,
+      color: rgb(1, 1, 1)
+    });
+    const riskTxt = `Risk Score: ${c.overallRiskScore || 0} / 100 (${c.riskLevel || 'Low'} Risk)`;
+    coverPage.drawText(riskTxt, {
+      x: 75,
+      y: contractY - 14,
+      size: 9,
+      font,
+      color: rgb(0.75, 0.78, 0.85)
+    });
+    contractY -= 36;
+  });
+
+  // Footer date
+  coverPage.drawText(`Report generated on ${generatedAt}`, {
+    x: 60,
+    y: 80,
+    size: 9,
+    font: fontItalic,
+    color: rgb(0.75, 0.78, 0.85)
+  });
+  coverPage.drawText('CONFIDENTIAL • FOR PROFESSIONAL REVIEW', {
+    x: 60,
+    y: 60,
+    size: 8,
+    font: fontBold,
+    color: COLORS.textMuted
+  });
+
+  // Page 2: Content Page
+  const contentPage = doc.addPage([A4_WIDTH, A4_HEIGHT]);
+  const ctx: PdfBuilderContext = {
+    doc,
+    page: contentPage,
+    font,
+    fontBold,
+    fontItalic,
+    cursorY: A4_HEIGHT - 60,
+    pageNum: 1,
+    totalPages: 1,
+    pageWidth: A4_WIDTH,
+    pageHeight: A4_HEIGHT,
+    marginX: 60
+  };
+  drawHeader(ctx);
+  drawFooter(ctx);
+
+  const res = comparison.results;
+
+  if (comparison.comparisonType === 'contracts') {
+    // Executive Summary Section
+    drawSectionHeading(ctx, 'Executive Summary');
+    if (res.summary) {
+      if (res.summary.keyDifferences && res.summary.keyDifferences.length > 0) {
+        drawParagraph(ctx, 'Key Differences:', { fontSize: 10, bold: true });
+        drawBulletList(ctx, res.summary.keyDifferences);
+      }
+      if (res.summary.topRisks && res.summary.topRisks.length > 0) {
+        drawParagraph(ctx, 'Top Risks & Exposures:', { fontSize: 10, bold: true, color: COLORS.danger });
+        drawBulletList(ctx, res.summary.topRisks);
+      }
+      if (res.summary.businessImpact && res.summary.businessImpact.length > 0) {
+        drawParagraph(ctx, 'Business Impact:', { fontSize: 10, bold: true });
+        drawBulletList(ctx, res.summary.businessImpact);
+      }
+      if (res.summary.negotiationConsiderations && res.summary.negotiationConsiderations.length > 0) {
+        drawParagraph(ctx, 'Negotiation Considerations:', { fontSize: 10, bold: true, color: COLORS.primary });
+        drawBulletList(ctx, res.summary.negotiationConsiderations);
+      }
+    }
+
+    // Category Breakdowns
+    if (res.categories) {
+      drawSectionHeading(ctx, 'Side-by-Side Clause Matrix');
+      for (const [catName, catData] of Object.entries(res.categories)) {
+        const cData = catData as any;
+        ensureSpace(ctx, 120);
+        drawParagraph(ctx, catName.toUpperCase(), { fontSize: 11, bold: true, color: COLORS.primary });
+        drawParagraph(ctx, `Semantic Similarity Score: ${cData.similarityScore}%`, { fontSize: 8, bold: true, color: COLORS.textMuted });
+        
+        drawParagraph(ctx, 'EXPLANATION', { fontSize: 8, bold: true, color: COLORS.textMuted, spacing: 2 });
+        drawParagraph(ctx, cData.explanation, { fontSize: 9 });
+        
+        drawParagraph(ctx, 'BUSINESS IMPACT', { fontSize: 8, bold: true, color: COLORS.textMuted, spacing: 2 });
+        drawParagraph(ctx, cData.businessImpact, { fontSize: 9 });
+
+        drawParagraph(ctx, 'RISK IMPACT', { fontSize: 8, bold: true, color: COLORS.textMuted, spacing: 2 });
+        drawParagraph(ctx, cData.riskImpact, { fontSize: 9, color: COLORS.danger });
+
+        ctx.cursorY -= 8;
+      }
+    }
+
+    // Unusual clauses
+    if (res.unusualClauses && res.unusualClauses.length > 0) {
+      drawSectionHeading(ctx, 'Unusual / Deviating Clauses');
+      res.unusualClauses.forEach((uc: any) => {
+        ensureSpace(ctx, 60);
+        drawParagraph(ctx, `${uc.clauseType} (in ${uc.contractName})`, { fontSize: 10, bold: true, color: COLORS.warning });
+        drawParagraph(ctx, `Findings: ${uc.explanation}`, { fontSize: 9 });
+        drawParagraph(ctx, `Why it deviates: ${uc.whyUnusual}`, { fontSize: 9, color: COLORS.danger });
+        ctx.cursorY -= 6;
+      });
+    }
+
+  } else if (comparison.comparisonType === 'clauses') {
+    drawSectionHeading(ctx, `Clause Differential: ${comparison.results.clauses?.[0]?.clauseType || 'Clause'}`);
+
+    if (res.aiExplanation) {
+      drawParagraph(ctx, 'Comparative AI Overview:', { fontSize: 10, bold: true });
+      drawParagraph(ctx, res.aiExplanation.explanation, { fontSize: 10 });
+      drawParagraph(ctx, 'BUSINESS IMPACT:', { fontSize: 9, bold: true, color: COLORS.textMuted });
+      drawParagraph(ctx, res.aiExplanation.businessImpact, { fontSize: 9 });
+      drawParagraph(ctx, 'RISK IMPACT:', { fontSize: 9, bold: true, color: COLORS.danger });
+      drawParagraph(ctx, res.aiExplanation.riskImpact, { fontSize: 9 });
+      drawParagraph(ctx, `Semantic Similarity Index: ${res.aiExplanation.similarityScore}%`, { fontSize: 9, bold: true, color: COLORS.primary });
+    }
+
+    if (res.clauses) {
+      drawSectionHeading(ctx, 'Individual Clause Alignments');
+      res.clauses.forEach((cl: any) => {
+        ensureSpace(ctx, 100);
+        drawParagraph(ctx, cl.contractName, { fontSize: 11, bold: true, color: COLORS.primary });
+        drawParagraph(ctx, `Risk Score: ${cl.riskScore} (${cl.riskLevel}) | Classification: ${cl.marketClassification}`, { fontSize: 8, bold: true, color: COLORS.textMuted });
+        drawParagraph(ctx, `"${cl.clauseText}"`, { fontSize: 9, font: fontItalic });
+        drawParagraph(ctx, `Summary: ${cl.summary}`, { fontSize: 9 });
+        ctx.cursorY -= 8;
+      });
+    }
+
+  } else if (comparison.comparisonType === 'versions') {
+    drawSectionHeading(ctx, 'Document Version Comparison');
+
+    if (res.diffSummary) {
+      drawParagraph(ctx, 'Revision Summary:', { fontSize: 11, bold: true });
+      drawParagraph(ctx, res.diffSummary.explanation, { fontSize: 10 });
+      drawParagraph(ctx, 'BUSINESS IMPACT:', { fontSize: 9, bold: true, color: COLORS.textMuted });
+      drawParagraph(ctx, res.diffSummary.businessImpact, { fontSize: 9 });
+      drawParagraph(ctx, 'RISK PROFILE CHANGES:', { fontSize: 9, bold: true, color: COLORS.danger });
+      drawParagraph(ctx, res.diffSummary.riskImpact, { fontSize: 9 });
+      drawParagraph(ctx, `Similarity Index: ${res.diffSummary.similarityScore}%`, { fontSize: 9, bold: true, color: COLORS.primary });
+    }
+
+    if (res.sectionDiffs) {
+      drawSectionHeading(ctx, 'Aligned Section Variances');
+      res.sectionDiffs.forEach((sd: any) => {
+        ensureSpace(ctx, 80);
+        const secLabel = sd.sectionNumber ? `${sd.sectionNumber} ${sd.title}` : sd.title;
+        drawParagraph(ctx, secLabel, { fontSize: 10, bold: true, color: COLORS.primary });
+        if (sd.explanation) {
+          drawParagraph(ctx, `Change explanation: ${sd.explanation}`, { fontSize: 9 });
+        }
+        
+        // Render simple inline diff preview (added/removed indicators)
+        const diffText = sd.diffs.map((d: any) => {
+          if (d.type === 'added') return `[+] ${d.value}`;
+          if (d.type === 'removed') return `[-] ${d.value}`;
+          return d.value;
+        }).join(' ');
+
+        const truncated = diffText.length > 300 ? diffText.substring(0, 300) + '... (truncated)' : diffText;
+        drawParagraph(ctx, `Diff preview: "${truncated}"`, { fontSize: 8, font: fontItalic, color: COLORS.textMuted });
+        ctx.cursorY -= 8;
+      });
+    }
+
+  } else if (comparison.comparisonType === 'risk') {
+    drawSectionHeading(ctx, 'Risk Delta Comparison');
+
+    if (res.aiExplanation) {
+      drawParagraph(ctx, 'Risk Exposure Assessment:', { fontSize: 11, bold: true });
+      drawParagraph(ctx, res.aiExplanation.deltaExplanation, { fontSize: 10 });
+      drawParagraph(ctx, 'BUSINESS IMPACT:', { fontSize: 9, bold: true, color: COLORS.textMuted });
+      drawParagraph(ctx, res.aiExplanation.businessImpact, { fontSize: 9 });
+      drawParagraph(ctx, 'PRACTICAL SIGNIFICANCE:', { fontSize: 9, bold: true, color: COLORS.primary });
+      drawParagraph(ctx, res.aiExplanation.practicalSignificance, { fontSize: 9 });
+    }
+
+    // List out scores
+    if (res.overallScores) {
+      drawSectionHeading(ctx, 'Agreement Risk Scoring');
+      for (const [cid, val] of Object.entries(res.overallScores)) {
+        const v = val as any;
+        ensureSpace(ctx, 40);
+        drawParagraph(ctx, `${v.contractName}: Score ${v.score} / 100 (${v.riskLevel} Risk)`, { fontSize: 10, bold: true });
+        
+        const breakdown = res.riskBreakdowns?.[cid];
+        if (breakdown) {
+          const bdText = `Financial: ${breakdown.Financial} | Legal: ${breakdown.Legal} | Operational: ${breakdown.Operational} | Reputational: ${breakdown.Reputational}`;
+          drawParagraph(ctx, bdText, { fontSize: 9, color: COLORS.textMuted });
+        }
+
+        const missing = res.missingClauses?.[cid];
+        if (missing && missing.length > 0) {
+          drawParagraph(ctx, `Missing Protections: ${missing.join(', ')}`, { fontSize: 8, color: COLORS.danger });
+        }
+      }
+    }
+  }
+
+  // Update total page count footer
+  const allPages = doc.getPages();
+  ctx.totalPages = allPages.length;
+  for (let i = 0; i < allPages.length; i++) {
+    if (i === 0) continue; // Skip cover page
+    const page = allPages[i];
+    page.drawText(`Page ${i + 1} of ${allPages.length}`, {
+      x: page.getWidth() - 90,
+      y: 25,
+      size: 8,
+      font: ctx.font,
+      color: COLORS.textMuted
+    });
+  }
+
+  return await doc.save();
+}
+
