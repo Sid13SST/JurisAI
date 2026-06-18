@@ -16,16 +16,9 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 5001;
 
-// CORS setup to allow request loops from the Vite React client
-const allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+// CORS setup to allow requests from both local and deployed clients
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Blocked by CORS policy'));
-    }
-  },
+  origin: true,
   credentials: true
 }));
 
