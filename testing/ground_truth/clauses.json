@@ -1,0 +1,47 @@
+[
+  {
+    "contractId": "nda_good",
+    "expectedClauses": [
+      "Confidentiality",
+      "Governing Law",
+      "Dispute Resolution"
+    ]
+  },
+  {
+    "contractId": "nda_bad",
+    "expectedClauses": [
+      "Confidentiality",
+      "Indemnity"
+    ]
+  },
+  {
+    "contractId": "saas_good",
+    "expectedClauses": [
+      "Limitation of Liability",
+      "Termination",
+      "Intellectual Property",
+      "Payment Terms"
+    ]
+  },
+  {
+    "contractId": "saas_bad",
+    "expectedClauses": [
+      "Limitation of Liability",
+      "Intellectual Property"
+    ]
+  },
+  {
+    "contractId": "vendor_agreement",
+    "expectedClauses": [
+      "Termination",
+      "Payment Terms"
+    ]
+  },
+  {
+    "contractId": "employment_agreement",
+    "expectedClauses": [
+      "Confidentiality",
+      "Intellectual Property"
+    ]
+  }
+]
