@@ -1,5 +1,5 @@
 import React from 'react';
-import { Target, FileEdit, Download, Zap } from 'lucide-react';
+import { Target, FileEdit, Download } from 'lucide-react';
 import type { ReadinessScore } from '../../services/copilot.service';
 
 interface ContractImprovementPanelProps {

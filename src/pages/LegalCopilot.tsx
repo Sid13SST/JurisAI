@@ -4,21 +4,15 @@ import { Sparkles, FileText, Activity } from 'lucide-react';
 import { CompliancePanel } from '../components/copilot/CompliancePanel';
 import { NegotiationAssistant } from '../components/copilot/NegotiationAssistant';
 import { ContractImprovementPanel } from '../components/copilot/ContractImprovementPanel';
-import {
-  analyzeCompliance,
-  generateNegotiationSuggestions,
-  calculateReadinessScore,
-  getLegalInsights,
-  type ComplianceAnalysis,
-  type NegotiationSuggestion,
-  type ReadinessScore,
-  type LegalInsights
+import type {
+  ComplianceAnalysis,
+  NegotiationSuggestion,
+  ReadinessScore,
+  LegalInsights
 } from '../services/copilot.service';
 
 export const LegalCopilot: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'compliance' | 'negotiation' | 'insights'>('compliance');
-  const [contractText, setContractText] = useState('Sample contract text...'); // In a real app, this is fetched from the selected contract
-  const [contractType, setContractType] = useState('SaaS Agreement');
 
   const [complianceData, setComplianceData] = useState<ComplianceAnalysis | null>(null);
   const [readinessData, setReadinessData] = useState<ReadinessScore | null>(null);

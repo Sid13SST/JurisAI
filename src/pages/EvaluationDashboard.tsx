@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  BarChart, 
-  Bar, 
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -13,25 +11,20 @@ import {
   PolarGrid, 
   PolarAngleAxis, 
   PolarRadiusAxis, 
-  Radar, 
-  PieChart, 
-  Pie, 
-  Cell 
+  Radar
 } from 'recharts';
 import { 
   ShieldCheck, 
   FileCheck2, 
   UserCheck2, 
   CheckCircle2, 
-  ArrowUpRight, 
   FileWarning, 
   Play, 
   Download, 
   Plus, 
   HelpCircle, 
   Terminal,
-  Activity,
-  AlertTriangle
+  Activity
 } from 'lucide-react';
 import { 
   fetchEvaluationResults, 
@@ -86,10 +79,6 @@ export const EvaluationDashboard: React.FC = () => {
   const getMetric = (type: string) => {
     const matched = results.find(r => r.testType === type);
     return matched ? matched.score : 0;
-  };
-
-  const getFullMetric = (type: string) => {
-    return results.find(r => r.testType === type);
   };
 
   // Run suite handler
@@ -294,7 +283,7 @@ export const EvaluationDashboard: React.FC = () => {
               </h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" radius="80%" data={radarData}>
+                  <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
                     <PolarGrid stroke="rgba(255,255,255,0.05)" />
                     <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 10 }} />
                     <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#64748b' }} />
