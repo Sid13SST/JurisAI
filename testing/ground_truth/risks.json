@@ -1,0 +1,28 @@
+[
+  {
+    "contractId": "nda_bad",
+    "expectedRisks": [
+      "Weak Confidentiality",
+      "One-Sided Indemnity"
+    ]
+  },
+  {
+    "contractId": "saas_bad",
+    "expectedRisks": [
+      "Unlimited Liability",
+      "Broad IP Assignment"
+    ]
+  },
+  {
+    "contractId": "vendor_agreement",
+    "expectedRisks": [
+      "Unusual Termination Rights"
+    ]
+  },
+  {
+    "contractId": "employment_agreement",
+    "expectedRisks": [
+      "Missing Force Majeure"
+    ]
+  }
+]
