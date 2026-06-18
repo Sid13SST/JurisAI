@@ -10,8 +10,14 @@ import {
 } from '../utils/firestoreRest';
 import { analyzeClauseRisks, ClauseForAnalysis } from '../services/aiService';
 
-// Path to market standards configuration
-const BASELINES_FILE_PATH = path.join(__dirname, '..', 'data', 'marketBaselines.json');
+// Path to market standards configuration (with fallback for built production runs where tsc doesn't copy JSON files)
+const BASELINES_FILE_PATH = (() => {
+  const primaryPath = path.join(__dirname, '..', 'data', 'marketBaselines.json');
+  if (fs.existsSync(primaryPath)) {
+    return primaryPath;
+  }
+  return path.join(__dirname, '..', '..', 'src', 'data', 'marketBaselines.json');
+})();
 
 /**
  * Decodes a Firebase ID Token manually (without network call) to extract the user's UID
