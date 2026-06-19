@@ -24,6 +24,20 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper to clone Firebase User object to trigger React state updates while preserving all prototype methods and internal private fields
+const cloneUser = (user: User | null): User | null => {
+  if (!user) return null;
+  return new Proxy(user, {
+    get(target, prop, receiver) {
+      const val = Reflect.get(target, prop, receiver);
+      if (typeof val === 'function') {
+        return val.bind(target);
+      }
+      return val;
+    }
+  }) as User;
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,8 +48,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName });
-      // Shallow copy to force react re-render with the display name loaded
-      setCurrentUser({ ...auth.currentUser } as User);
+      // Clone using proxy to force react re-render while keeping prototype and private fields working
+      setCurrentUser(cloneUser(auth.currentUser));
     } finally {
       setLoading(false);
     }
@@ -83,8 +97,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       displayName, 
       photoURL: photoURL !== undefined ? photoURL : auth.currentUser.photoURL 
     });
-    // Trigger React render update
-    setCurrentUser({ ...auth.currentUser } as User);
+    // Clone using proxy to force react re-render while keeping prototype and private fields working
+    setCurrentUser(cloneUser(auth.currentUser));
   };
 
   // Bind auth state observer on mount
